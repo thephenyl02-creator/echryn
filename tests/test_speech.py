@@ -157,3 +157,13 @@ async def test_speech_analyze_transcribes_when_vad_finds_speech(tmp_path, monkey
     assert result["status"] == "available"
     assert result["source"] == "faster_whisper"
     assert result["value"]["text"] == "This is useful speech."
+
+
+def test_pyav_version_is_compatible_with_faster_whisper():
+    import av
+
+    major = int(av.__version__.split(".", 1)[0])
+    assert major < 19, (
+        "faster-whisper 1.2.1 calls av.open(..., metadata_errors=...), "
+        "which PyAV 19 removed"
+    )
