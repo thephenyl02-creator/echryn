@@ -8,10 +8,7 @@ from app.services.speech import (
 )
 
 
-def test_licensed_music_without_original_sound_skips_transcription(monkeypatch):
-    from app.services import speech
-
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
+def test_licensed_music_without_original_sound_still_requires_vad():
     native = {
         "music": {"audio_cluster_id": "177258346273870"},
         "original_sound_info": None,
@@ -19,15 +16,12 @@ def test_licensed_music_without_original_sound_skips_transcription(monkeypatch):
 
     policy = native_audio_policy(native)
 
-    assert policy["action"] == "skip_transcription"
-    assert policy["reason"] == "licensed_music_without_original_sound_signal"
+    assert policy["action"] == "inspect_audio"
+    assert policy["reason"] == "licensed_music_requires_vad"
     assert policy["licensed_music"] is True
 
 
 def test_original_sound_signal_keeps_speech_check(monkeypatch):
-    from app.services import speech
-
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
     native = {
         "music": {"audio_cluster_id": "music"},
         "original_sound_info": {"audio_asset_id": "voice"},
@@ -40,9 +34,6 @@ def test_original_sound_signal_keeps_speech_check(monkeypatch):
 
 
 def test_no_music_keeps_speech_check(monkeypatch):
-    from app.services import speech
-
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
     policy = native_audio_policy({"music": {}, "original_sound_info": None})
 
     assert policy["action"] == "inspect_audio"
@@ -62,15 +53,21 @@ def test_speech_chunk_helpers_use_16khz_samples():
 
 
 @pytest.mark.asyncio
-async def test_speech_analyze_stops_before_vad_for_licensed_music(tmp_path, monkeypatch):
+async def test_speech_analyze_runs_vad_for_licensed_music(tmp_path, monkeypatch):
     from app.services import speech
 
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
-
-    def should_not_run(_):
-        raise AssertionError("VAD should not run for licensed-music-only policy")
-
-    monkeypatch.setattr(speech, "_vad_sync", should_not_run)
+    monkeypatch.setattr(speech.settings, "echryn_min_total_speech_seconds", 0.6)
+    monkeypatch.setattr(
+        speech,
+        "_vad_sync",
+        lambda _: {
+            "duration_seconds": 10.0,
+            "speech_seconds": 0.0,
+            "speech_ratio": 0.0,
+            "chunks": [],
+            "chunks_seconds": [],
+        },
+    )
 
     result = await speech_analyze(
         tmp_path / "dummy.mp4",
@@ -80,15 +77,15 @@ async def test_speech_analyze_stops_before_vad_for_licensed_music(tmp_path, monk
         },
     )
 
-    assert result["status"] == "not_applicable"
-    assert result["source"] == "native_audio_policy"
+    assert result["status"] == "no_speech_detected"
+    assert result["source"] == "silero_vad"
+    assert result["policy"]["reason"] == "licensed_music_requires_vad"
 
 
 @pytest.mark.asyncio
 async def test_speech_analyze_stops_before_whisper_when_vad_finds_no_speech(tmp_path, monkeypatch):
     from app.services import speech
 
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
     monkeypatch.setattr(speech.settings, "echryn_min_total_speech_seconds", 0.6)
     monkeypatch.setattr(
         speech,
@@ -120,7 +117,6 @@ async def test_speech_analyze_stops_before_whisper_when_vad_finds_no_speech(tmp_
 async def test_speech_analyze_transcribes_when_vad_finds_speech(tmp_path, monkeypatch):
     from app.services import speech
 
-    monkeypatch.setattr(speech.settings, "echryn_skip_licensed_music", True)
     monkeypatch.setattr(speech.settings, "echryn_min_total_speech_seconds", 0.6)
     monkeypatch.setattr(
         speech,
