@@ -54,9 +54,13 @@ URL / media identifier
    No mandatory paid VLM/API.
   ↓
 6. AUDIO EVIDENCE LAYER
-   Detect whether useful speech exists.
-   - music only → skip transcription
-   - speech → local faster-whisper
+   Apply native audio policy first.
+   - licensed music + no original-sound signal → skip transcription
+   - otherwise run local Silero VAD
+   - no useful speech → no_speech_detected
+   - useful speech → local faster-whisper
+   - return transcript, language, segment timestamps, word timestamps,
+     detector statistics, model metadata and provenance
    No mandatory paid speech API.
   ↓
 7. EVIDENCE ASSEMBLY
@@ -215,12 +219,25 @@ sampled frames
 → merge into result
 ```
 
-Audio milestone:
+Audio implementation:
 ```text
-audio
-→ local speech/no-speech decision
-→ faster-whisper only when speech exists
+native audio metadata
+→ licensed-music policy
+→ Silero VAD at 16 kHz
+→ no useful speech: stop
+→ useful speech: faster-whisper (lazy-loaded local model)
+→ transcript + segment/word timestamps + provenance
 ```
+
+Default local transcription configuration:
+```text
+model=base
+device=cpu
+compute_type=int8
+beam_size=1
+```
+
+The Whisper model is loaded lazily only when speech reaches the transcription stage.
 
 ## Architecture-change rule
 Do not change this architecture implicitly.
