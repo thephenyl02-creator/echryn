@@ -13,9 +13,15 @@ class Extractor:
         self.cache = FileCache()
         self.instagram = InstagramClient()
 
-    async def extract(self, url: str, mode: str = "auto", force_refresh: bool = False) -> dict[str, Any]:
+    async def extract(
+        self,
+        url: str,
+        mode: str = "auto",
+        multimodal: bool = False,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
         resolved = resolve_instagram_url(url)
-        cache_key = f"instagram-{resolved['media_id']}-{mode}"
+        cache_key = f"instagram-{resolved['media_id']}-{mode}-mm{int(multimodal)}"
         request_id = hashlib.sha256(cache_key.encode()).hexdigest()[:20]
 
         if not force_refresh:
@@ -35,7 +41,7 @@ class Extractor:
             "media": {},
             "summary": {},
             "provenance": [],
-            "diagnostics": {"mode": mode, "cached": False},
+            "diagnostics": {"mode": mode, "multimodal": multimodal, "cached": False},
         }
 
         try:
@@ -73,7 +79,8 @@ class Extractor:
 
                     result["visual"] = await local_visual_analyze(
                         frames,
-                        include_inline_frames=(mode == "evidence"),
+                        include_inline_frames=(multimodal or mode == "evidence"),
+                        run_ocr=not multimodal,
                     )
                     result["speech"] = await speech_analyze(media_path)
 
@@ -131,6 +138,8 @@ class Extractor:
             ocr_text = ocr_payload.get("prominent_text") or ocr_payload.get("text")
             if ocr_text:
                 summary_parts.append(ocr_text)
+            elif multimodal and result.get("visual", {}).get("frames"):
+                summary_parts.append("Visual frame evidence available for multimodal interpretation.")
 
             speech_value = result.get("speech", {}).get("value")
             if result.get("speech", {}).get("status") == "available" and speech_value:
