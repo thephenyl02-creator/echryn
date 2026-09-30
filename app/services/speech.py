@@ -18,17 +18,11 @@ def native_audio_policy(native: dict[str, Any]) -> dict[str, Any]:
     has_music = isinstance(music, dict) and bool(music)
     has_original_sound = isinstance(original_sound, dict) and bool(original_sound)
 
-    if settings.echryn_skip_licensed_music and has_music and not has_original_sound:
-        return {
-            "action": "skip_transcription",
-            "reason": "licensed_music_without_original_sound_signal",
-            "licensed_music": True,
-            "original_sound_signal": False,
-        }
-
+    # Licensed music metadata is only a hint. Reels can contain speech mixed over
+    # licensed music, so native metadata alone is not enough to skip speech detection.
     return {
         "action": "inspect_audio",
-        "reason": "speech_check_required",
+        "reason": "licensed_music_requires_vad" if has_music else "speech_check_required",
         "licensed_music": has_music,
         "original_sound_signal": has_original_sound,
     }
@@ -166,18 +160,6 @@ def _transcribe_sync(path: Path) -> dict[str, Any]:
 
 async def speech_analyze(path: Path, native: dict[str, Any]) -> dict[str, Any]:
     policy = native_audio_policy(native)
-
-    if policy["action"] == "skip_transcription":
-        return {
-            "status": "not_applicable",
-            "source": "native_audio_policy",
-            "reason": policy["reason"],
-            "policy": policy,
-            "detector": {
-                "status": "skipped_by_policy",
-                "reason": "native licensed-music signal was sufficient to skip local speech processing",
-            },
-        }
 
     try:
         vad = await asyncio.to_thread(_vad_sync, path)
