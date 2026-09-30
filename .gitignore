@@ -1,0 +1,44 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Python tooling / caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# App caches / temp files
+.cache/
+cache/
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# Build / package artifacts
+build/
+dist/
+*.egg-info/
+
+# Local data that should not be committed
+data/
+downloads/
+frames/
+media/
