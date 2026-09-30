@@ -11,13 +11,13 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
 - Uses authenticated Instagram media-info as the cheap first layer.
 - Extracts creator, caption, engagement, media metadata, music/audio metadata and native text-bearing fields.
 - Runs a semantic coverage gate so metadata is not confused with the actual message of the post.
-- Supports three modes:
+- Supports four modes:
   - `metadata`: never download media.
   - `auto`: deep-inspect only when native data is not semantically sufficient.
-  - `deep`: always inspect the actual media.
-- Deep path temporarily downloads the video, probes it with FFprobe, samples frames with FFmpeg, sends frames to an optional hosted vision adapter, and sends media to an optional hosted speech adapter.
+  - `evidence`: return representative frame evidence plus audio evidence.\n  - `deep`: always inspect the actual media.
+- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frames directly and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio uses native licensed-music policy, local Silero VAD, and local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
-- Caches structured results by Instagram media ID + mode.
+- Caches structured results by Instagram media ID + mode + multimodal capability.
 - Exposes REST and MCP over the same core.
 
 ## Security model
@@ -65,25 +65,9 @@ Tools:
 - `extract_url(url, mode="auto", force_refresh=false)`
 - `service_info()`
 
-## Hosted vision adapter contract
+## Local visual policy\n\nSet `multimodal=true` for multimodal callers. Echryn then skips OCR and returns representative compressed frames directly. Non-multimodal callers use local OCR as a fallback text representation.\n\n## Local audio pipeline
 
-Set `VISION_API_URL` to a small wrapper endpoint under your control. Echryn POSTs:
-
-```json
-{
-  "model": "optional-model-name",
-  "task": "Extract on-screen creator text, UI/background text, scene meaning, actions, products/sites, and uncertainties. Return concise JSON.",
-  "images": ["data:image/jpeg;base64,..."]
-}
-```
-
-Return any JSON object; Echryn stores it under `visual.value` with provenance.
-
-## Hosted speech adapter contract
-
-Set `SPEECH_API_URL` to a wrapper that accepts multipart form-data with `file` and optional `model`. Return JSON containing a `text` field. Empty text is normalized to `no_speech_detected`.
-
-## Cloud Run
+Audio processing is local:\n\n\`\`\`text\nnative audio metadata\n→ licensed music with no original-sound signal: skip transcription\n→ otherwise Silero VAD\n→ no useful speech: no_speech_detected\n→ speech: faster-whisper\n→ transcript + language + segment/word timestamps + provenance\n\`\`\`\n\nThe default transcription model is \`base\` on CPU with \`int8\` compute. The model is loaded lazily only when transcription is actually required.\n\n## Cloud Run
 
 ```bash
 gcloud run deploy echryn \
