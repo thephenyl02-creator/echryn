@@ -460,15 +460,5 @@ async def local_visual_analyze(
     }
 
 
-async def speech_analyze(path: Path) -> dict[str, Any]:
-    # Frozen V1 architecture requires local speech/no-speech analysis.
-    # This milestone intentionally does not call an external speech API.
-    return {
-        "status": "skipped_by_policy",
-        "reason": "local speech analysis milestone pending",
-        "source": "local_speech",
-    }
-
-
 def temp_workspace(prefix: str):
     return tempfile.TemporaryDirectory(prefix=prefix)
