@@ -54,9 +54,9 @@ URL / media identifier
    No mandatory paid VLM/API.
   ↓
 6. AUDIO EVIDENCE LAYER
-   Apply native audio policy first.
-   - licensed music + no original-sound signal → skip transcription
-   - otherwise run local Silero VAD
+   Apply native audio metadata as a hint, not as proof of no speech.
+   - licensed music may still contain voice-over
+   - if an audio stream exists, run local Silero VAD
    - no useful speech → no_speech_detected
    - useful speech → local faster-whisper
    - return transcript, language, segment timestamps, word timestamps,
@@ -221,8 +221,7 @@ sampled frames
 
 Audio implementation:
 ```text
-native audio metadata
-→ licensed-music policy
+native audio metadata (context only)
 → Silero VAD at 16 kHz
 → no useful speech: stop
 → useful speech: faster-whisper (lazy-loaded local model)
