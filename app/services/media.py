@@ -395,28 +395,30 @@ def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
 async def local_visual_analyze(
     frames: list[Path],
     include_inline_frames: bool = False,
+    run_ocr: bool = True,
 ) -> dict[str, Any]:
     ocr_entries: list[dict[str, Any]] = []
     prominent_per_frame: list[str] = []
 
-    for index, frame in enumerate(frames):
-        text, psm = await _ocr_frame(frame)
-        prominent_text = await _prominent_ocr_frame(frame)
-        prominent_per_frame.append(prominent_text)
-        ocr_entries.append(
-            {
-                "frame_index": index,
-                "timestamp_seconds": round(index * 1.5, 3),
-                "text": text,
-                "prominent_text": prominent_text,
-                "engine": "tesseract",
-                "psm": psm,
-            }
-        )
+    if run_ocr:
+        for index, frame in enumerate(frames):
+            text, psm = await _ocr_frame(frame)
+            prominent_text = await _prominent_ocr_frame(frame)
+            prominent_per_frame.append(prominent_text)
+            ocr_entries.append(
+                {
+                    "frame_index": index,
+                    "timestamp_seconds": round(index * 1.5, 3),
+                    "text": text,
+                    "prominent_text": prominent_text,
+                    "engine": "tesseract",
+                    "psm": psm,
+                }
+            )
 
-    unique_entries = deduplicate_ocr_entries(ocr_entries)
+    unique_entries = deduplicate_ocr_entries(ocr_entries) if run_ocr else []
     combined_text = "\n".join(entry["text"] for entry in unique_entries if entry.get("text")).strip()
-    prominent_lines = deduplicate_text_lines(prominent_per_frame)
+    prominent_lines = deduplicate_text_lines(prominent_per_frame) if run_ocr else []
     prominent_text = "\n".join(prominent_lines).strip()
 
     visual_frames: list[dict[str, Any]] = []
@@ -439,14 +441,21 @@ async def local_visual_analyze(
     return {
         "status": "available" if has_visual_evidence else "absent",
         "source": "local_visual",
-        "ocr": {
-            "status": "available" if combined_text else "absent",
-            "engine": "tesseract",
-            "text": combined_text,
-            "prominent_text": prominent_text,
-            "frames": ocr_entries,
-            "unique_frames": unique_entries,
-        },
+        "ocr": (
+            {
+                "status": "available" if combined_text else "absent",
+                "engine": "tesseract",
+                "text": combined_text,
+                "prominent_text": prominent_text,
+                "frames": ocr_entries,
+                "unique_frames": unique_entries,
+            }
+            if run_ocr
+            else {
+                "status": "skipped_by_policy",
+                "reason": "multimodal caller receives visual frame evidence directly",
+            }
+        ),
         "frames": visual_frames,
     }
 
