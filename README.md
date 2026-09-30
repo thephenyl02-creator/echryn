@@ -99,3 +99,9 @@ Add Instagram session secrets through your cloud secret manager rather than comm
 ## Production notes
 
 The included cache is intentionally filesystem-backed for a single-instance prototype. Cloud Run filesystems are ephemeral, so before multi-instance production use, replace `FileCache` with D1/Redis/Postgres/object-backed cache. The extraction core is isolated so this swap does not change the API contract.
+
+
+## Audio dependency compatibility
+
+Echryn pins `av<19` because faster-whisper 1.2.1 still calls
+`av.open(..., metadata_errors="ignore")`, while PyAV 19 removed that argument.
