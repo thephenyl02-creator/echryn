@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from app.config import settings
 
@@ -88,27 +88,137 @@ def _ocr_score(text: str) -> int:
     return sum(ch.isalnum() for ch in text) + (4 * len(text.splitlines()))
 
 
-async def _ocr_frame(path: Path) -> tuple[str, str]:
-    candidates: list[tuple[str, str]] = []
-    for psm in ("6", "11"):
-        code, out, _ = await _run("tesseract", str(path), "stdout", "--psm", psm)
-        if code == 0:
-            cleaned = _clean_ocr_text(out)
-            candidates.append((cleaned, psm))
+def _make_ocr_variants(path: Path) -> list[tuple[str, Path]]:
+    variants: list[tuple[str, Path]] = [("original", path)]
+    base_dir = path.parent / "_ocr"
+    base_dir.mkdir(parents=True, exist_ok=True)
 
-    if not candidates:
+    with Image.open(path) as source:
+        rgb = source.convert("RGB")
+        width, height = rgb.size
+
+        # Crop away the outer UI rails while retaining creator text and the main scene.
+        crop = rgb.crop(
+            (
+                int(width * 0.04),
+                int(height * 0.04),
+                int(width * 0.96),
+                int(height * 0.92),
+            )
+        )
+        scale = 2
+        crop = crop.resize(
+            (crop.width * scale, crop.height * scale),
+            Image.Resampling.LANCZOS,
+        )
+
+        gray = ImageOps.grayscale(crop)
+        gray = ImageOps.autocontrast(gray, cutoff=1)
+        gray = ImageEnhance.Contrast(gray).enhance(1.65)
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        enhanced = base_dir / f"{path.stem}-enhanced.png"
+        gray.save(enhanced, format="PNG")
+        variants.append(("enhanced", enhanced))
+
+        # Two binary variants handle bright overlay text against changing backgrounds.
+        for threshold in (150, 190):
+            binary = gray.point(lambda p, t=threshold: 255 if p >= t else 0, mode="1")
+            binary_path = base_dir / f"{path.stem}-binary-{threshold}.png"
+            binary.save(binary_path, format="PNG")
+            variants.append((f"binary-{threshold}", binary_path))
+
+            inverted = ImageOps.invert(binary.convert("L"))
+            inverted_path = base_dir / f"{path.stem}-binary-{threshold}-inv.png"
+            inverted.save(inverted_path, format="PNG")
+            variants.append((f"binary-{threshold}-inv", inverted_path))
+
+    return variants
+
+
+def _candidate_line_score(line: str) -> float:
+    clean = re.sub(r"\s+", " ", line).strip()
+    if not clean:
+        return -1.0
+    alnum = sum(ch.isalnum() for ch in clean)
+    words = re.findall(r"[A-Za-z0-9]+", clean)
+    alpha_words = [w for w in words if any(ch.isalpha() for ch in w)]
+    noise = sum(1 for ch in clean if not (ch.isalnum() or ch.isspace() or ch in "'&-"))
+    return (
+        alnum
+        + (7 * len(alpha_words))
+        + (4 if len(alpha_words) >= 3 else 0)
+        - (3 * noise)
+    )
+
+
+def _merge_variant_lines(texts: list[str]) -> str:
+    chosen: list[str] = []
+    for text in texts:
+        for raw in text.splitlines():
+            line = re.sub(r"\s+", " ", raw).strip(" |_=~")
+            if sum(ch.isalnum() for ch in line) < 4:
+                continue
+
+            matched = None
+            for i, existing in enumerate(chosen):
+                if _is_near_duplicate(line, existing, threshold=0.64):
+                    matched = i
+                    break
+
+            if matched is None:
+                chosen.append(line)
+            elif _candidate_line_score(line) > _candidate_line_score(chosen[matched]):
+                chosen[matched] = line
+
+    return "\n".join(chosen)
+
+
+async def _ocr_frame(path: Path) -> tuple[str, str]:
+    outputs: list[tuple[str, str, str]] = []
+
+    for variant_name, variant_path in _make_ocr_variants(path):
+        for psm in ("6", "11"):
+            code, out, _ = await _run(
+                "tesseract",
+                str(variant_path),
+                "stdout",
+                "-l",
+                "eng",
+                "--oem",
+                "1",
+                "--psm",
+                psm,
+                "-c",
+                "preserve_interword_spaces=1",
+            )
+            if code == 0:
+                cleaned = _clean_ocr_text(out)
+                if cleaned:
+                    outputs.append((cleaned, variant_name, psm))
+
+    if not outputs:
         return "", "unknown"
 
-    text, psm = max(candidates, key=lambda item: _ocr_score(item[0]))
-    return text, psm
+    merged = _merge_variant_lines([item[0] for item in outputs])
+    if merged:
+        best_meta = max(outputs, key=lambda item: _ocr_score(item[0]))
+        return merged, f"ensemble:{best_meta[1]}:psm{best_meta[2]}"
+
+    text, variant_name, psm = max(outputs, key=lambda item: _ocr_score(item[0]))
+    return text, f"{variant_name}:psm{psm}"
 
 
 async def _prominent_ocr_frame(path: Path) -> str:
-    code, out, _ = await _run("tesseract", str(path), "stdout", "--psm", "11", "tsv")
+    variants = _make_ocr_variants(path)
+    preferred = next((p for name, p in variants if name == "enhanced"), path)
+    code, out, _ = await _run(
+        "tesseract", str(preferred), "stdout", "-l", "eng", "--oem", "1", "--psm", "11", "tsv"
+    )
     if code != 0 or not out.strip():
         return ""
 
-    with Image.open(path) as image:
+    with Image.open(preferred) as image:
         _, image_height = image.size
 
     rows = out.splitlines()
