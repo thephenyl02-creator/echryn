@@ -56,18 +56,119 @@ async def probe_media(path: Path) -> dict[str, Any]:
     return json.loads(out)
 
 
+async def _duration_seconds(path: Path) -> float:
+    code, out, err = await _run(
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+    )
+    if code != 0:
+        raise RuntimeError(f"ffprobe duration failed: {err[-500:]}")
+    try:
+        return max(0.0, float(out.strip()))
+    except ValueError as exc:
+        raise RuntimeError("ffprobe returned invalid media duration") from exc
+
+
+async def _scene_timestamps(path: Path) -> list[float]:
+    threshold = settings.echryn_scene_threshold
+    code, _, err = await _run(
+        "ffmpeg", "-hide_banner", "-loglevel", "info", "-i", str(path),
+        "-vf", f"select='gt(scene,{threshold})',showinfo",
+        "-an", "-f", "null", "-",
+    )
+    if code != 0:
+        raise RuntimeError(f"ffmpeg scene detection failed: {err[-500:]}")
+
+    timestamps: list[float] = []
+    for match in re.finditer(r"pts_time:([0-9.]+)", err):
+        try:
+            timestamps.append(float(match.group(1)))
+        except ValueError:
+            continue
+    return timestamps
+
+
+def _build_frame_timestamps(
+    duration_seconds: float,
+    scene_timestamps: list[float],
+    limit: int,
+    min_gap_seconds: float,
+) -> list[float]:
+    if duration_seconds <= 0 or limit <= 0:
+        return []
+
+    end = max(0.0, duration_seconds - 0.05)
+    candidates = [0.0]
+    candidates.extend(ts for ts in scene_timestamps if 0.0 < ts < end)
+    if end > 0:
+        candidates.append(end)
+
+    candidates = sorted(candidates)
+
+    distinct: list[float] = []
+    for ts in candidates:
+        if not distinct or ts - distinct[-1] >= min_gap_seconds:
+            distinct.append(ts)
+
+    # Hard cuts alone can miss on-screen text changes, fades, and other useful
+    # moments. Supplement the scene candidates with evenly spaced anchors.
+    target = min(limit, max(2, limit))
+    if len(distinct) < target:
+        if limit == 1:
+            anchors = [0.0]
+        else:
+            anchors = [end * i / (limit - 1) for i in range(limit)]
+        for ts in anchors:
+            if all(abs(ts - existing) >= min_gap_seconds for existing in distinct):
+                distinct.append(ts)
+        distinct.sort()
+
+    if len(distinct) <= limit:
+        return [round(ts, 3) for ts in distinct]
+
+    indices = _selected_frame_indices(len(distinct), limit)
+    return [round(distinct[index], 3) for index in indices]
+
+
+def _frame_timestamp_seconds(path: Path, fallback_index: int) -> float:
+    match = re.search(r"-t([0-9]+(?:\.[0-9]+)?)$", path.stem)
+    if match:
+        try:
+            return round(float(match.group(1)), 3)
+        except ValueError:
+            pass
+    return round(fallback_index * 1.5, 3)
+
+
 async def extract_frames(path: Path, out_dir: Path, max_frames: int | None = None) -> list[Path]:
     max_frames = max_frames or settings.echryn_max_frames
     out_dir.mkdir(parents=True, exist_ok=True)
-    pattern = str(out_dir / "frame-%03d.jpg")
-    code, _, err = await _run(
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
-        "-vf", "fps=1/1.5,scale='min(960,iw)':-2", "-frames:v", str(max_frames),
-        "-q:v", "3", pattern,
+
+    duration = await _duration_seconds(path)
+    scenes = await _scene_timestamps(path)
+    timestamps = _build_frame_timestamps(
+        duration,
+        scenes,
+        max_frames,
+        settings.echryn_scene_min_gap_seconds,
     )
-    if code != 0:
-        raise RuntimeError(f"ffmpeg frame extraction failed: {err[-500:]}")
-    return sorted(out_dir.glob("frame-*.jpg"))
+
+    frames: list[Path] = []
+    for index, timestamp in enumerate(timestamps):
+        dest = out_dir / f"frame-{index:03d}-t{timestamp:.3f}.jpg"
+        code, _, err = await _run(
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-ss", f"{timestamp:.3f}", "-i", str(path),
+            "-frames:v", "1",
+            "-vf", "scale='min(960,iw)':-2",
+            "-q:v", "3", str(dest),
+        )
+        if code != 0:
+            raise RuntimeError(f"ffmpeg frame extraction failed at {timestamp:.3f}s: {err[-500:]}")
+        if dest.exists():
+            frames.append(dest)
+
+    return frames
 
 
 def _clean_ocr_text(text: str) -> str:
@@ -481,7 +582,7 @@ async def local_visual_analyze(
             ocr_entries.append(
                 {
                     "frame_index": index,
-                    "timestamp_seconds": round(index * 1.5, 3),
+                    "timestamp_seconds": _frame_timestamp_seconds(frame, index),
                     "text": text,
                     "prominent_text": prominent_text,
                     "engine": "tesseract",
@@ -505,7 +606,7 @@ async def local_visual_analyze(
             visual_frames.append(
                 {
                     "frame_index": index,
-                    "timestamp_seconds": round(index * 1.5, 3),
+                    "timestamp_seconds": _frame_timestamp_seconds(frames[index], index),
                     "mime_type": "image/webp",
                     "width": width,
                     "height": height,
