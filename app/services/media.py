@@ -369,6 +369,79 @@ def _selected_frame_indices(total: int, limit: int) -> list[int]:
     return sorted({round(i * (total - 1) / (limit - 1)) for i in range(limit)})
 
 
+def _dhash64(path: Path) -> int:
+    with Image.open(path) as image:
+        gray = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+        pixels = list(gray.getdata())
+
+    value = 0
+    for row in range(8):
+        offset = row * 9
+        for col in range(8):
+            value <<= 1
+            value |= int(pixels[offset + col] > pixels[offset + col + 1])
+    return value
+
+
+def _hamming_distance(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def select_representative_frame_indices(
+    frames: list[Path],
+    limit: int,
+    duplicate_distance: int = 6,
+) -> list[int]:
+    if not frames or limit <= 0:
+        return []
+    if len(frames) <= limit:
+        return list(range(len(frames)))
+
+    hashes = [_dhash64(frame) for frame in frames]
+
+    # First remove frames that are perceptually almost identical to something
+    # already retained. This is intentionally conservative: dHash distance 0
+    # means identical structure; small distances are near-duplicates.
+    unique_candidates: list[int] = []
+    for index, frame_hash in enumerate(hashes):
+        if any(
+            _hamming_distance(frame_hash, hashes[kept]) <= duplicate_distance
+            for kept in unique_candidates
+        ):
+            continue
+        unique_candidates.append(index)
+
+    if not unique_candidates:
+        return _selected_frame_indices(len(frames), limit)
+
+    if len(unique_candidates) <= limit:
+        return unique_candidates
+
+    # Preserve temporal coverage by seeding the first and last distinct frames,
+    # then greedily add the candidate that is most visually novel relative to
+    # what is already selected. Temporal distance breaks visual-score ties.
+    selected = [unique_candidates[0]]
+    if limit > 1 and unique_candidates[-1] != unique_candidates[0]:
+        selected.append(unique_candidates[-1])
+
+    while len(selected) < limit:
+        remaining = [i for i in unique_candidates if i not in selected]
+        if not remaining:
+            break
+
+        def score(index: int) -> tuple[int, int]:
+            visual_novelty = min(
+                _hamming_distance(hashes[index], hashes[chosen])
+                for chosen in selected
+            )
+            temporal_novelty = min(abs(index - chosen) for chosen in selected)
+            return visual_novelty, temporal_novelty
+
+        selected.append(max(remaining, key=score))
+
+    return sorted(selected)
+
+
 def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
     with Image.open(path) as image:
         image = image.convert("RGB")
@@ -423,7 +496,11 @@ async def local_visual_analyze(
 
     visual_frames: list[dict[str, Any]] = []
     if include_inline_frames:
-        for index in _selected_frame_indices(len(frames), getattr(settings, "echryn_evidence_max_frames", 6)):
+        selected_indices = select_representative_frame_indices(
+            frames,
+            getattr(settings, "echryn_evidence_max_frames", 6),
+        )
+        for index in selected_indices:
             data_url, compressed_bytes, width, height = _webp_data_url(frames[index])
             visual_frames.append(
                 {
@@ -434,6 +511,7 @@ async def local_visual_analyze(
                     "height": height,
                     "compressed_bytes": compressed_bytes,
                     "data_url": data_url,
+                    "selection": "perceptual_novelty",
                 }
             )
 
