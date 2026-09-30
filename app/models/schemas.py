@@ -10,7 +10,7 @@ Status = Literal[
     "failed",
     "no_speech_detected",
 ]
-Mode = Literal["metadata", "auto", "deep"]
+Mode = Literal["metadata", "auto", "evidence", "deep"]
 
 
 class ExtractionRequest(BaseModel):
