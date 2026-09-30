@@ -32,8 +32,8 @@ URL / media identifier
   ↓
 4. MEDIA EVIDENCE LAYER
    FFprobe + FFmpeg:
-   scene changes, timestamps, representative frames,
-   perceptual dedupe, frame sequence
+   scene-change detection, true timestamps, representative frames,
+   temporal fallback anchors, perceptual dedupe, frame sequence
   ↓
 5. VISUAL EVIDENCE POLICY
    If caller is multimodal:
@@ -209,13 +209,13 @@ shortcode: Dd10cOlujGD
 media ID: 3996330882590454147
 ```
 
-Current corrective milestone:
+Current visual implementation:
 ```text
-sampled frames
-→ local OCR
-→ deduplicate OCR text across frames
-→ preserve timestamps
-→ compressed frame evidence
+scene detection + temporal fallback anchors
+→ true timestamped sampled frames
+→ perceptual duplicate removal / novelty selection
+→ local OCR only for non-multimodal callers
+→ compressed WebP frame evidence
 → merge into result
 ```
 
