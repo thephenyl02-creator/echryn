@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     echryn_evidence_max_frames: int = 6
     echryn_frame_webp_quality: int = 70
     echryn_frame_max_width: int = 640
+    echryn_scene_threshold: float = 0.24
+    echryn_scene_min_gap_seconds: float = 0.6
     echryn_mode_default: str = "auto"
 
     echryn_speech_model: str = "base"
