@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     echryn_vad_min_silence_ms: int = 300
     echryn_vad_speech_pad_ms: int = 150
     echryn_min_total_speech_seconds: float = 0.6
-    echryn_skip_licensed_music: bool = True
 
     instagram_sessionid: str | None = None
     instagram_csrftoken: str | None = None
