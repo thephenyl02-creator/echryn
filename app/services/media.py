@@ -100,36 +100,46 @@ def _build_frame_timestamps(
     # Keep a safety margin from EOF. Seeking to the exact final timestamp can
     # produce no decodable packet on short/re-encoded social videos.
     end = max(0.0, duration_seconds - 0.35)
-    candidates = [0.0]
-    candidates.extend(ts for ts in scene_timestamps if 0.0 < ts < end)
+
+    # Scene cuts have priority over fallback anchors. Start/end are also treated
+    # as first-class evidence points so temporal coverage is always preserved.
+    scene_candidates = [0.0]
+    scene_candidates.extend(ts for ts in scene_timestamps if 0.0 < ts < end)
     if end > 0:
-        candidates.append(end)
+        scene_candidates.append(end)
+    scene_candidates.sort()
 
-    candidates = sorted(candidates)
+    distinct_scenes: list[float] = []
+    for ts in scene_candidates:
+        if not distinct_scenes or ts - distinct_scenes[-1] >= min_gap_seconds:
+            distinct_scenes.append(ts)
 
-    distinct: list[float] = []
-    for ts in candidates:
-        if not distinct or ts - distinct[-1] >= min_gap_seconds:
-            distinct.append(ts)
+    # If there are more scene points than the response budget permits, thin
+    # only the scene points themselves. Never let fallback anchors displace a
+    # valid scene cut.
+    if len(distinct_scenes) > limit:
+        indices = _selected_frame_indices(len(distinct_scenes), limit)
+        return [round(distinct_scenes[index], 3) for index in indices]
 
-    # Hard cuts alone can miss on-screen text changes, fades, and other useful
-    # moments. Supplement the scene candidates with evenly spaced anchors.
-    target = min(limit, max(2, limit))
-    if len(distinct) < target:
+    selected = list(distinct_scenes)
+
+    # Hard cuts can miss text swaps, fades, and other meaningful changes, so
+    # fill remaining capacity with temporal anchors that are sufficiently far
+    # from already-selected scene points.
+    if len(selected) < limit:
         if limit == 1:
             anchors = [0.0]
         else:
             anchors = [end * i / (limit - 1) for i in range(limit)]
+
         for ts in anchors:
-            if all(abs(ts - existing) >= min_gap_seconds for existing in distinct):
-                distinct.append(ts)
-        distinct.sort()
+            if len(selected) >= limit:
+                break
+            if all(abs(ts - existing) >= min_gap_seconds for existing in selected):
+                selected.append(ts)
 
-    if len(distinct) <= limit:
-        return [round(ts, 3) for ts in distinct]
-
-    indices = _selected_frame_indices(len(distinct), limit)
-    return [round(distinct[index], 3) for index in indices]
+    selected.sort()
+    return [round(ts, 3) for ts in selected]
 
 
 def _frame_timestamp_seconds(path: Path, fallback_index: int) -> float:
