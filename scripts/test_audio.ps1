@@ -23,6 +23,9 @@ $result = Invoke-RestMethod `
     -ContentType "application/json" `
     -Body $body
 
+# Keep the latest response available in the caller's PowerShell session.
+$global:EchrynResult = $result
+
 Write-Host ""
 Write-Host "status:" $result.status
 Write-Host "multimodal:" $result.diagnostics.multimodal
