@@ -14,7 +14,8 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
 - Supports four modes:
   - `metadata`: never download media.
   - `auto`: deep-inspect only when native data is not semantically sufficient.
-  - `evidence`: return representative frame evidence plus audio evidence.\n  - `deep`: always inspect the actual media.
+  - `evidence`: return representative frame evidence plus audio evidence.
+  - `deep`: always inspect the actual media.
 - Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frames directly and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio uses native licensed-music policy, local Silero VAD, and local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
 - Caches structured results by Instagram media ID + mode + multimodal capability.
@@ -32,7 +33,7 @@ Echryn does not attempt CAPTCHA bypass, challenge bypass, rate-limit evasion, or
 cp .env.example .env
 # fill INSTAGRAM_SESSIONID and optionally csrftoken/ds_user_id
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8080
+python -m uvicorn app.main:app --port 8080
 ```
 
 Health:
@@ -62,12 +63,29 @@ python -m app.mcp_server
 
 Tools:
 
-- `extract_url(url, mode="auto", force_refresh=false)`
+- `extract_url(url, mode="auto", multimodal=false, force_refresh=false)`
 - `service_info()`
 
-## Local visual policy\n\nSet `multimodal=true` for multimodal callers. Echryn then skips OCR and returns representative compressed frames directly. Non-multimodal callers use local OCR as a fallback text representation.\n\n## Local audio pipeline
+## Local visual policy
 
-Audio processing is local:\n\n\`\`\`text\nnative audio metadata\n→ licensed music with no original-sound signal: skip transcription\n→ otherwise Silero VAD\n→ no useful speech: no_speech_detected\n→ speech: faster-whisper\n→ transcript + language + segment/word timestamps + provenance\n\`\`\`\n\nThe default transcription model is \`base\` on CPU with \`int8\` compute. The model is loaded lazily only when transcription is actually required.\n\n## Cloud Run
+Set `multimodal=true` for multimodal callers. Echryn then skips OCR and returns representative compressed frames directly. Non-multimodal callers use local OCR as a fallback text representation.
+
+## Local audio pipeline
+
+Audio processing is local:
+
+```text
+native audio metadata
+→ licensed music with no original-sound signal: skip transcription
+→ otherwise Silero VAD
+→ no useful speech: no_speech_detected
+→ speech: faster-whisper
+→ transcript + language + segment/word timestamps + provenance
+```
+
+The default transcription model is `base` on CPU with `int8` compute. The model is loaded lazily only when transcription is actually required.
+
+## Cloud Run
 
 ```bash
 gcloud run deploy echryn \
@@ -77,7 +95,7 @@ gcloud run deploy echryn \
   --set-env-vars ECHRYN_API_KEY='YOUR_API_KEY'
 ```
 
-Add Instagram and provider secrets through your cloud secret manager rather than command-line history.
+Add Instagram session secrets through your cloud secret manager rather than command-line history.
 
 ## Production notes
 
