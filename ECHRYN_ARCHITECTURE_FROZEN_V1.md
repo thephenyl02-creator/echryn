@@ -35,11 +35,17 @@ URL / media identifier
    scene changes, timestamps, representative frames,
    perceptual dedupe, frame sequence
   ↓
-5. LOCAL VISUAL EXTRACTION
-   V1:
-   - OCR
+5. VISUAL EVIDENCE POLICY
+   If caller is multimodal:
+   - return representative compressed frames directly
+   - skip OCR entirely
+   - caller interprets the frames itself
+
+   If caller is not multimodal:
+   - run local OCR as a fallback text representation
    - Tesseract initially
-   - stronger local/open OCR later (PaddleOCR / GOT-OCR / etc.)
+   - stronger local/open OCR later if needed
+
    Later optional local CV:
    - embeddings
    - object detection
@@ -54,7 +60,7 @@ URL / media identifier
    No mandatory paid speech API.
   ↓
 7. EVIDENCE ASSEMBLY
-   Merge native + OCR + frames + speech + media metadata.
+   Merge native + frames + speech + optional OCR + media metadata.
    Preserve source + confidence/status.
   ↓
 CACHE RESULT
@@ -65,8 +71,15 @@ DELETE TEMP MEDIA / FRAMES
 ## Request modes
 - `metadata`: Native/platform information only. No media download.
 - `auto`: Cheap-first. Download media only when semantic coverage is insufficient.
-- `evidence`: Return native data + OCR + representative compressed frames + audio evidence.
+- `evidence`: Return native data + representative compressed frames + audio evidence; OCR is conditional on caller capability.
 - `deep`: Force actual media inspection even when native metadata appears sufficient.
+
+Caller capability hint:
+```json
+{"multimodal": true}
+```
+
+When `multimodal=true`, Echryn skips OCR and returns representative frame evidence directly. OCR is reserved for non-multimodal callers.
 
 `deep` does not mean “call a paid AI model.”
 
@@ -96,9 +109,9 @@ A multimodal caller can inspect the returned frames itself. Echryn does not need
 ## Interpretation vs evidence
 Echryn V1 focuses on **evidence**:
 - what native data says
-- what text appears on screen
+- representative visual frames
 - what speech exists
-- what representative frames show
+- OCR only when a non-multimodal caller needs text representation
 - where each piece came from
 
 Interpretation is optional and can later use deterministic/local logic, local classifiers/encoders, an optional locally hosted VLM, or optional external adapters only if explicitly chosen.
