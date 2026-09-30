@@ -16,7 +16,7 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
   - `auto`: deep-inspect only when native data is not semantically sufficient.
   - `evidence`: return representative frame evidence plus audio evidence.
   - `deep`: always inspect the actual media.
-- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frames directly and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio uses native licensed-music policy, local Silero VAD, and local faster-whisper only when useful speech is present.
+- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frames directly and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio treats native music metadata as context only, runs local Silero VAD whenever an audio stream exists, and runs local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
 - Caches structured results by Instagram media ID + mode + multimodal capability.
 - Exposes REST and MCP over the same core.
@@ -75,9 +75,8 @@ Set `multimodal=true` for multimodal callers. Echryn then skips OCR and returns 
 Audio processing is local:
 
 ```text
-native audio metadata
-→ licensed music with no original-sound signal: skip transcription
-→ otherwise Silero VAD
+native audio metadata (context only)
+→ Silero VAD for every available audio stream
 → no useful speech: no_speech_detected
 → speech: faster-whisper
 → transcript + language + segment/word timestamps + provenance
