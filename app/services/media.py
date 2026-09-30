@@ -103,6 +103,77 @@ async def _ocr_frame(path: Path) -> tuple[str, str]:
     return text, psm
 
 
+async def _prominent_ocr_frame(path: Path) -> str:
+    code, out, _ = await _run("tesseract", str(path), "stdout", "--psm", "11", "tsv")
+    if code != 0 or not out.strip():
+        return ""
+
+    with Image.open(path) as image:
+        _, image_height = image.size
+
+    min_height = max(22, int(image_height * 0.018))
+    rows = out.splitlines()
+    if not rows:
+        return ""
+
+    grouped: dict[tuple[str, str, str, str], list[tuple[int, str]]] = {}
+    header = rows[0].split("\t")
+    index = {name: i for i, name in enumerate(header)}
+
+    required = {"block_num", "par_num", "line_num", "word_num", "conf", "height", "text"}
+    if not required.issubset(index):
+        return ""
+
+    for row in rows[1:]:
+        cols = row.split("\t")
+        if len(cols) < len(header):
+            continue
+
+        text = cols[index["text"]].strip()
+        if not text:
+            continue
+
+        try:
+            conf = float(cols[index["conf"]])
+            height = int(cols[index["height"]])
+            word_num = int(cols[index["word_num"]])
+        except ValueError:
+            continue
+
+        if conf < 45 or height < min_height:
+            continue
+
+        key = (
+            cols[index["block_num"]],
+            cols[index["par_num"]],
+            cols[index["line_num"]],
+            str(height),
+        )
+        grouped.setdefault(key, []).append((word_num, text))
+
+    lines: list[str] = []
+    for words in grouped.values():
+        line = " ".join(text for _, text in sorted(words)).strip()
+        line = re.sub(r"\s+", " ", line)
+        if sum(ch.isalnum() for ch in line) >= 3:
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+def deduplicate_text_lines(texts: list[str], threshold: float = 0.88) -> list[str]:
+    unique: list[str] = []
+    for text in texts:
+        for raw_line in text.splitlines():
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            if not line:
+                continue
+            if any(_is_near_duplicate(line, existing, threshold=threshold) for existing in unique):
+                continue
+            unique.append(line)
+    return unique
+
+
 def _normalized_for_compare(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
@@ -167,14 +238,18 @@ async def local_visual_analyze(
     include_inline_frames: bool = False,
 ) -> dict[str, Any]:
     ocr_entries: list[dict[str, Any]] = []
+    prominent_per_frame: list[str] = []
 
     for index, frame in enumerate(frames):
         text, psm = await _ocr_frame(frame)
+        prominent_text = await _prominent_ocr_frame(frame)
+        prominent_per_frame.append(prominent_text)
         ocr_entries.append(
             {
                 "frame_index": index,
                 "timestamp_seconds": round(index * 1.5, 3),
                 "text": text,
+                "prominent_text": prominent_text,
                 "engine": "tesseract",
                 "psm": psm,
             }
@@ -182,6 +257,8 @@ async def local_visual_analyze(
 
     unique_entries = deduplicate_ocr_entries(ocr_entries)
     combined_text = "\n".join(entry["text"] for entry in unique_entries if entry.get("text")).strip()
+    prominent_lines = deduplicate_text_lines(prominent_per_frame)
+    prominent_text = "\n".join(prominent_lines).strip()
 
     visual_frames: list[dict[str, Any]] = []
     if include_inline_frames:
@@ -207,6 +284,7 @@ async def local_visual_analyze(
             "status": "available" if combined_text else "absent",
             "engine": "tesseract",
             "text": combined_text,
+            "prominent_text": prominent_text,
             "frames": ocr_entries,
             "unique_frames": unique_entries,
         },
