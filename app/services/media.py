@@ -97,7 +97,9 @@ def _build_frame_timestamps(
     if duration_seconds <= 0 or limit <= 0:
         return []
 
-    end = max(0.0, duration_seconds - 0.05)
+    # Keep a safety margin from EOF. Seeking to the exact final timestamp can
+    # produce no decodable packet on short/re-encoded social videos.
+    end = max(0.0, duration_seconds - 0.35)
     candidates = [0.0]
     candidates.extend(ts for ts in scene_timestamps if 0.0 < ts < end)
     if end > 0:
@@ -155,18 +157,43 @@ async def extract_frames(path: Path, out_dir: Path, max_frames: int | None = Non
 
     frames: list[Path] = []
     for index, timestamp in enumerate(timestamps):
-        dest = out_dir / f"frame-{index:03d}-t{timestamp:.3f}.jpg"
-        code, _, err = await _run(
-            "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-ss", f"{timestamp:.3f}", "-i", str(path),
-            "-frames:v", "1",
-            "-vf", "scale='min(960,iw)':-2",
-            "-q:v", "3", str(dest),
-        )
-        if code != 0:
-            raise RuntimeError(f"ffmpeg frame extraction failed at {timestamp:.3f}s: {err[-500:]}")
-        if dest.exists():
-            frames.append(dest)
+        attempts = [timestamp]
+        if duration > 0:
+            attempts.extend(
+                max(0.0, timestamp - backoff)
+                for backoff in (0.15, 0.35, 0.75)
+            )
+
+        extracted = False
+        last_error = ""
+        used_timestamp = timestamp
+
+        for attempt in attempts:
+            dest = out_dir / f"frame-{index:03d}-t{attempt:.3f}.jpg"
+            code, _, err = await _run(
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-ss", f"{attempt:.3f}", "-i", str(path),
+                "-frames:v", "1",
+                "-vf", "scale='min(960,iw)':-2",
+                "-q:v", "3", str(dest),
+            )
+            last_error = err
+            if code == 0 and dest.exists() and dest.stat().st_size > 0:
+                frames.append(dest)
+                used_timestamp = attempt
+                extracted = True
+                break
+            if dest.exists():
+                dest.unlink(missing_ok=True)
+
+        if not extracted:
+            # A single unusable timestamp should not fail the whole extraction.
+            # Continue with the other representative frames and only fail if
+            # nothing at all could be extracted.
+            continue
+
+    if not frames:
+        raise RuntimeError(f"ffmpeg could not extract any representative frames: {last_error[-500:]}")
 
     return frames
 
