@@ -111,52 +111,101 @@ async def _prominent_ocr_frame(path: Path) -> str:
     with Image.open(path) as image:
         _, image_height = image.size
 
-    min_height = max(22, int(image_height * 0.018))
     rows = out.splitlines()
     if not rows:
         return ""
 
-    grouped: dict[tuple[str, str, str, str], list[tuple[int, str]]] = {}
     header = rows[0].split("\t")
     index = {name: i for i, name in enumerate(header)}
 
-    required = {"block_num", "par_num", "line_num", "word_num", "conf", "height", "text"}
+    required = {
+        "block_num",
+        "par_num",
+        "line_num",
+        "word_num",
+        "left",
+        "conf",
+        "height",
+        "text",
+    }
     if not required.issubset(index):
         return ""
+
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
 
     for row in rows[1:]:
         cols = row.split("\t")
         if len(cols) < len(header):
             continue
 
-        text = cols[index["text"]].strip()
-        if not text:
+        word = cols[index["text"]].strip()
+        if not word:
             continue
 
         try:
             conf = float(cols[index["conf"]])
             height = int(cols[index["height"]])
+            left = int(cols[index["left"]])
             word_num = int(cols[index["word_num"]])
         except ValueError:
             continue
 
-        if conf < 45 or height < min_height:
+        if conf < 35:
             continue
 
         key = (
             cols[index["block_num"]],
             cols[index["par_num"]],
             cols[index["line_num"]],
-            str(height),
         )
-        grouped.setdefault(key, []).append((word_num, text))
+        grouped.setdefault(key, []).append(
+            {
+                "word_num": word_num,
+                "left": left,
+                "height": height,
+                "conf": conf,
+                "text": word,
+            }
+        )
+
+    candidates: list[dict[str, Any]] = []
+    for words in grouped.values():
+        ordered = sorted(words, key=lambda item: (item["left"], item["word_num"]))
+        line = re.sub(r"\s+", " ", " ".join(item["text"] for item in ordered)).strip()
+        if sum(ch.isalnum() for ch in line) < 3:
+            continue
+
+        heights = sorted(item["height"] for item in ordered)
+        median_height = heights[len(heights) // 2]
+        max_height = max(heights)
+        avg_conf = sum(item["conf"] for item in ordered) / len(ordered)
+
+        candidates.append(
+            {
+                "text": line,
+                "median_height": median_height,
+                "max_height": max_height,
+                "avg_conf": avg_conf,
+            }
+        )
+
+    if not candidates:
+        return ""
+
+    largest = max(item["max_height"] for item in candidates)
+    min_prominent_height = max(
+        24,
+        int(image_height * 0.025),
+        int(largest * 0.60),
+    )
 
     lines: list[str] = []
-    for words in grouped.values():
-        line = " ".join(text for _, text in sorted(words)).strip()
-        line = re.sub(r"\s+", " ", line)
-        if sum(ch.isalnum() for ch in line) >= 3:
-            lines.append(line)
+    for item in candidates:
+        if item["max_height"] < min_prominent_height:
+            continue
+        if item["avg_conf"] < 45:
+            continue
+        lines.append(item["text"])
 
     return "\n".join(lines)
 
