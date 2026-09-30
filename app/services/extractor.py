@@ -83,7 +83,19 @@ class Extractor:
                         include_inline_frames=(multimodal or mode == "evidence"),
                         run_ocr=not multimodal,
                     )
-                    result["speech"] = await speech_analyze(media_path, result["native"])
+
+                    has_audio_stream = any(
+                        stream.get("codec_type") == "audio"
+                        for stream in probe.get("streams", [])
+                    )
+                    if has_audio_stream:
+                        result["speech"] = await speech_analyze(media_path, result["native"])
+                    else:
+                        result["speech"] = {
+                            "status": "not_applicable",
+                            "source": "media_probe",
+                            "reason": "no_audio_stream",
+                        }
 
                     result["provenance"].append(
                         {
