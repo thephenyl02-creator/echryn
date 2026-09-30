@@ -16,6 +16,7 @@ Mode = Literal["metadata", "auto", "evidence", "deep"]
 class ExtractionRequest(BaseModel):
     url: HttpUrl
     mode: Mode = "auto"
+    multimodal: bool = False
     force_refresh: bool = False
 
 
