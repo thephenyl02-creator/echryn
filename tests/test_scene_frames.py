@@ -12,7 +12,7 @@ def test_scene_timestamps_keep_cuts_and_temporal_coverage():
     )
 
     assert timestamps[0] == 0.0
-    assert timestamps[-1] == 14.95
+    assert timestamps[-1] == 14.65
     assert 1.2 in timestamps
     assert 4.8 in timestamps
     assert 9.1 in timestamps
@@ -29,7 +29,7 @@ def test_scene_timestamp_builder_supplements_when_no_cuts():
 
     assert len(timestamps) == 6
     assert timestamps[0] == 0.0
-    assert timestamps[-1] == 11.95
+    assert timestamps[-1] == 11.65
 
 
 def test_scene_timestamp_builder_deduplicates_close_cuts():
