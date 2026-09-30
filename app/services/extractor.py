@@ -4,7 +4,8 @@ from typing import Any
 
 from app.adapters.instagram import InstagramClient, normalize_native, resolve_instagram_url
 from app.services.coverage import semantic_coverage
-from app.services.media import download_media, extract_frames, local_visual_analyze, probe_media, speech_analyze, temp_workspace
+from app.services.media import download_media, extract_frames, local_visual_analyze, probe_media, temp_workspace
+from app.services.speech import speech_analyze
 from app.storage.cache import FileCache
 
 
@@ -82,7 +83,7 @@ class Extractor:
                         include_inline_frames=(multimodal or mode == "evidence"),
                         run_ocr=not multimodal,
                     )
-                    result["speech"] = await speech_analyze(media_path)
+                    result["speech"] = await speech_analyze(media_path, result["native"])
 
                     result["provenance"].append(
                         {
@@ -107,6 +108,34 @@ class Extractor:
                                 "source": "compressed_frame_evidence",
                                 "format": "webp",
                                 "status": "available",
+                            }
+                        )
+
+                    speech = result.get("speech", {})
+                    detector = speech.get("detector", {})
+                    if detector.get("engine") == "silero_vad":
+                        result["provenance"].append(
+                            {
+                                "source": "local_speech_detection",
+                                "engine": "silero_vad",
+                                "status": detector.get("status", "available"),
+                            }
+                        )
+                    if speech.get("source") == "faster_whisper" and speech.get("status") == "available":
+                        result["provenance"].append(
+                            {
+                                "source": "local_speech_transcription",
+                                "engine": "faster_whisper",
+                                "model": speech.get("model", {}).get("model"),
+                                "status": "available",
+                            }
+                        )
+                    if speech.get("source") == "native_audio_policy":
+                        result["provenance"].append(
+                            {
+                                "source": "native_audio_policy",
+                                "status": speech.get("status"),
+                                "reason": speech.get("reason"),
                             }
                         )
 
