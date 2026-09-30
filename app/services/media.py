@@ -143,7 +143,7 @@ def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
     with Image.open(path) as image:
         image = image.convert("RGB")
         width, height = image.size
-        max_width = settings.echryn_frame_max_width
+        max_width = getattr(settings, "echryn_frame_max_width", 640)
         if width > max_width:
             new_height = round(height * (max_width / width))
             image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
@@ -153,7 +153,7 @@ def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
         image.save(
             buffer,
             format="WEBP",
-            quality=settings.echryn_frame_webp_quality,
+            quality=getattr(settings, "echryn_frame_webp_quality", 70),
             method=6,
         )
 
@@ -185,7 +185,7 @@ async def local_visual_analyze(
 
     visual_frames: list[dict[str, Any]] = []
     if include_inline_frames:
-        for index in _selected_frame_indices(len(frames), settings.echryn_evidence_max_frames):
+        for index in _selected_frame_indices(len(frames), getattr(settings, "echryn_evidence_max_frames", 6)):
             data_url, compressed_bytes, width, height = _webp_data_url(frames[index])
             visual_frames.append(
                 {
