@@ -127,7 +127,8 @@ class Extractor:
             if result["native"].get("caption"):
                 summary_parts.append(result["native"]["caption"])
 
-            ocr_text = result.get("visual", {}).get("ocr", {}).get("text")
+            ocr_payload = result.get("visual", {}).get("ocr", {})
+            ocr_text = ocr_payload.get("prominent_text") or ocr_payload.get("text")
             if ocr_text:
                 summary_parts.append(ocr_text)
 
