@@ -2,6 +2,8 @@ import html
 import re
 from typing import Any
 
+import httpx
+
 from app.services.coverage import substantive_text
 
 _TEXT_KEY_RE = re.compile(
@@ -157,4 +159,131 @@ def inspect_native_resources(
         "text_tracks": text_tracks,
         "dash": dash,
         "semantic_coverage": bool(substantive),
+    }
+
+
+def _text_from_track_payload(payload: str) -> str:
+    text = html.unescape(payload)
+    text = re.sub(r"<[^>]+>", " ", text)
+    lines: list[str] = []
+    seen: set[str] = set()
+
+    for raw in text.replace("\r", "\n").split("\n"):
+        line = " ".join(raw.split()).strip()
+        if not line:
+            continue
+        if line.upper() == "WEBVTT":
+            continue
+        if re.fullmatch(r"\d+", line):
+            continue
+        if "-->" in line:
+            continue
+        if line.startswith(("NOTE ", "STYLE", "REGION")):
+            continue
+        if line not in seen:
+            seen.add(line)
+            lines.append(line)
+
+    return " ".join(lines).strip()
+
+
+async def fetch_text_track_evidence(
+    tracks: list[dict[str, Any]],
+    *,
+    user_agent: str,
+    max_tracks: int = 3,
+    max_bytes: int = 1_000_000,
+) -> dict[str, Any]:
+    if not tracks:
+        return {
+            "status": "not_applicable",
+            "reason": "no_native_text_track_url",
+            "tracks": [],
+            "semantic_text": [],
+            "semantic_coverage": False,
+        }
+
+    outputs: list[dict[str, Any]] = []
+    semantic: list[dict[str, Any]] = []
+
+    async with httpx.AsyncClient(
+        timeout=15,
+        follow_redirects=True,
+        headers={"User-Agent": user_agent},
+    ) as client:
+        for track in tracks[:max_tracks]:
+            url = track.get("url")
+            if not isinstance(url, str):
+                continue
+
+            entry = {
+                "url": url,
+                "path": track.get("path"),
+                "language": track.get("language"),
+                "mime_type": track.get("mime_type"),
+            }
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                raw = response.content
+                if len(raw) > max_bytes:
+                    entry.update(
+                        {
+                            "status": "failed",
+                            "reason": "text_track_exceeded_size_limit",
+                            "bytes": len(raw),
+                        }
+                    )
+                    outputs.append(entry)
+                    continue
+
+                decoded = raw.decode("utf-8", errors="replace")
+                text = _text_from_track_payload(decoded)
+                is_substantive = substantive_text(text)
+                entry.update(
+                    {
+                        "status": "available",
+                        "bytes": len(raw),
+                        "text": text,
+                        "substantive": is_substantive,
+                    }
+                )
+                outputs.append(entry)
+
+                if is_substantive:
+                    semantic.append(
+                        {
+                            "source": "native_text_track",
+                            "url": url,
+                            "language": track.get("language"),
+                            "text": text,
+                        }
+                    )
+            except Exception as exc:
+                entry.update(
+                    {
+                        "status": "failed",
+                        "reason": "text_track_fetch_failed",
+                        "error": str(exc),
+                        "exception_type": exc.__class__.__name__,
+                    }
+                )
+                outputs.append(entry)
+
+    if semantic:
+        status = "available"
+        reason = "substantive_native_text_track"
+    elif any(entry.get("status") == "available" for entry in outputs):
+        status = "available"
+        reason = "native_text_track_not_substantive"
+    else:
+        status = "failed"
+        reason = "native_text_track_fetch_failed"
+
+    return {
+        "status": status,
+        "reason": reason,
+        "tracks": outputs,
+        "semantic_text": semantic,
+        "semantic_coverage": bool(semantic),
     }
