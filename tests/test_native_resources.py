@@ -117,3 +117,43 @@ def test_nested_caption_profile_picture_is_not_a_text_track():
 
     assert result["text_tracks"] == []
     assert result["semantic_coverage"] is False
+
+
+def test_caption_track_container_preserves_metadata():
+    item = {
+        "caption_tracks": [
+            {
+                "url": "https://cdn.example.com/en.vtt",
+                "language": "en",
+                "mime_type": "text/vtt",
+            },
+            {
+                "url": "https://cdn.example.com/es.vtt",
+                "language": "es",
+                "mime_type": "text/vtt",
+            },
+        ]
+    }
+
+    result = inspect_native_resources(item, {"dash_info": None})
+
+    assert result["status"] == "available"
+    assert result["reason"] == "native_text_track_exposed"
+    assert [track["language"] for track in result["text_tracks"]] == ["en", "es"]
+    assert all(track["mime_type"] == "text/vtt" for track in result["text_tracks"])
+    assert result["text_tracks"][0]["path"] == "caption_tracks[0].url"
+
+
+def test_caption_ancestor_does_not_turn_nested_image_into_text_track():
+    item = {
+        "caption": {
+            "text": "Comment for access",
+            "user": {
+                "profile_pic_url": "https://cdn.example.com/avatar.jpg",
+            },
+        }
+    }
+
+    result = inspect_native_resources(item, {"dash_info": None})
+
+    assert result["text_tracks"] == []
