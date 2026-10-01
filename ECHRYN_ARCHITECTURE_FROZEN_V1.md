@@ -26,9 +26,12 @@ URL / media identifier
    Does native data actually explain the content?
    yes → RETURN
    no  → inspect native resources/manifests/text tracks
+          - scan native subtitle/caption/transcript fields
+          - inspect DASH for text-track signals/resources
+          - fetch exposed WebVTT/TTML tracks when available
   ↓
    enough? → RETURN
-   not enough → TEMPORARY MEDIA DOWNLOAD
+   not enough / fetch failed → TEMPORARY MEDIA DOWNLOAD
   ↓
 4. MEDIA EVIDENCE LAYER
    FFprobe + FFmpeg:
