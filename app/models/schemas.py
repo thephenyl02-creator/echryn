@@ -11,12 +11,14 @@ Status = Literal[
     "no_speech_detected",
 ]
 Mode = Literal["metadata", "auto", "evidence", "deep"]
+FrameDelivery = Literal["urls", "inline", "none"]
 
 
 class ExtractionRequest(BaseModel):
     url: HttpUrl
     mode: Mode = "auto"
     multimodal: bool = False
+    frame_delivery: FrameDelivery = "urls"
     force_refresh: bool = False
 
 
