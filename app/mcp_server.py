@@ -10,6 +10,7 @@ async def extract_url(
     url: str,
     mode: str = "auto",
     multimodal: bool = False,
+    frame_delivery: str = "urls",
     force_refresh: bool = False,
 ) -> dict:
     """Extract structured evidence from a short-form content URL. Instagram Reels are supported in v1."""
@@ -17,6 +18,7 @@ async def extract_url(
         url,
         mode=mode,
         multimodal=multimodal,
+        frame_delivery=frame_delivery,
         force_refresh=force_refresh,
     )
 
@@ -31,6 +33,7 @@ def service_info() -> dict:
         "supported_sources": ["instagram_reel"],
         "modes": ["metadata", "auto", "evidence", "deep"],
         "multimodal_ocr_bypass": True,
+        "frame_delivery": ["urls", "inline", "none"],
         "local_audio": {
             "speech_detection": "silero_vad",
             "transcription": "faster_whisper",
