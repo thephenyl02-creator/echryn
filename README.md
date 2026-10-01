@@ -16,7 +16,7 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
   - `auto`: deep-inspect only when native data is not semantically sufficient.
   - `evidence`: return representative frame evidence plus audio evidence.
   - `deep`: always inspect the actual media.
-- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frames directly and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio treats native music metadata as context only, runs local Silero VAD whenever an audio stream exists, and runs local faster-whisper only when useful speech is present.
+- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frame evidence and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio treats native music metadata as context only, runs local Silero VAD whenever an audio stream exists, and runs local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
 - Caches structured results by Instagram media ID + mode + multimodal capability.
 - Exposes REST and MCP over the same core.
@@ -105,3 +105,25 @@ The included cache is intentionally filesystem-backed for a single-instance prot
 
 Echryn pins `av<19` because faster-whisper 1.2.1 still calls
 `av.open(..., metadata_errors="ignore")`, while PyAV 19 removed that argument.
+
+
+## Frame delivery
+
+Representative frames support three delivery modes:
+
+- `urls` (default): persist compressed WebP evidence under the Echryn data directory and return signed temporary URLs.
+- `inline`: return base64 WebP data URLs for callers that explicitly need inline evidence.
+- `none`: suppress frame payload delivery.
+
+Request example:
+
+```json
+{
+  "url": "https://www.instagram.com/reel/...",
+  "mode": "evidence",
+  "multimodal": true,
+  "frame_delivery": "urls"
+}
+```
+
+Signed frame URLs expire after `ECHRYN_FRAME_URL_TTL_SECONDS` (7 days by default). The prototype uses the configured Echryn API key as the signing secret. Production object storage can replace this local frame store without changing the extraction evidence contract.
