@@ -67,8 +67,10 @@ def _extract_text_track_urls(item: dict[str, Any]) -> list[dict[str, Any]]:
     tracks: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for path, _, value in _walk(item):
-        if not _TEXT_KEY_RE.search(path):
+    for path, key, value in _walk(item):
+        # Only treat the current field as text-bearing. Do not inherit a
+        # "caption" match from an ancestor such as caption.user.profile_pic_url.
+        if not _TEXT_KEY_RE.search(key):
             continue
 
         if isinstance(value, str) and value.startswith(("http://", "https://")):
@@ -226,6 +228,25 @@ async def fetch_text_track_evidence(
                 response = await client.get(url)
                 response.raise_for_status()
                 raw = response.content
+                content_type = (response.headers.get("content-type") or "").lower()
+                plausible_text = (
+                    content_type.startswith("text/")
+                    or "json" in content_type
+                    or "xml" in content_type
+                    or "vtt" in content_type
+                    or "ttml" in content_type
+                    or url.lower().split("?", 1)[0].endswith((".vtt", ".ttml", ".srt", ".xml", ".json"))
+                )
+                if not plausible_text:
+                    entry.update(
+                        {
+                            "status": "failed",
+                            "reason": "unsupported_text_track_content_type",
+                            "content_type": content_type or None,
+                        }
+                    )
+                    outputs.append(entry)
+                    continue
                 if len(raw) > max_bytes:
                     entry.update(
                         {
