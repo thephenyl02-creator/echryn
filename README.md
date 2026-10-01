@@ -127,3 +127,15 @@ Request example:
 ```
 
 Signed frame URLs expire after `ECHRYN_FRAME_URL_TTL_SECONDS` (7 days by default). The prototype uses the configured Echryn API key as the signing secret. Production object storage can replace this local frame store without changing the extraction evidence contract.
+
+
+## Native resource inspection
+
+Before downloading the full video in `auto` mode, Echryn now inspects Instagram-native text-bearing resources:
+
+- subtitle/caption/transcript-like fields in the media-info object
+- exposed text-track URLs
+- DASH/manifests for text-track signals
+- native WebVTT/TTML text tracks when URLs are available
+
+If substantive native text is found, Echryn can satisfy semantic coverage without downloading and processing the full media file. If native text resources are absent, non-substantive, or fail to load, Echryn falls back to the existing media evidence pipeline.
