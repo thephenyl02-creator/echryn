@@ -101,3 +101,19 @@ def test_ttml_payload_becomes_plain_text():
 
     assert "This is a native subtitle sentence." in text
     assert "It explains the actual content." in text
+
+
+def test_nested_caption_profile_picture_is_not_a_text_track():
+    item = {
+        "caption": {
+            "text": "Comment REINVENT for access",
+            "user": {
+                "profile_pic_url": "https://cdn.example.com/avatar.jpg"
+            },
+        }
+    }
+
+    result = inspect_native_resources(item, {"dash_info": None})
+
+    assert result["text_tracks"] == []
+    assert result["semantic_coverage"] is False
