@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     echryn_frame_webp_quality: int = 70
     echryn_frame_max_width: int = 640
     echryn_frame_store_subdir: str = "frames"
+    echryn_frame_url_ttl_seconds: int = 7 * 24 * 3600
     echryn_scene_threshold: float = 0.24
     echryn_scene_min_gap_seconds: float = 0.6
     echryn_mode_default: str = "auto"
