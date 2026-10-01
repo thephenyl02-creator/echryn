@@ -3,9 +3,10 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.instagram import InstagramClient, normalize_native, resolve_instagram_url
+from app.config import settings
 from app.services.coverage import semantic_coverage
 from app.services.media import download_media, extract_frames, local_visual_analyze, probe_media, temp_workspace
-from app.services.native_resources import inspect_native_resources
+from app.services.native_resources import fetch_text_track_evidence, inspect_native_resources
 from app.services.speech import speech_analyze
 from app.storage.cache import FileCache
 
@@ -79,6 +80,34 @@ class Extractor:
             )
 
             native_resource_covered = native_resources.get("semantic_coverage", False)
+
+            text_track_evidence = {
+                "status": "not_applicable",
+                "reason": "native_text_track_fetch_not_required",
+                "tracks": [],
+                "semantic_text": [],
+                "semantic_coverage": False,
+            }
+            if (
+                mode == "auto"
+                and not coverage["covered"]
+                and not native_resource_covered
+                and native_resources.get("text_tracks")
+            ):
+                text_track_evidence = await fetch_text_track_evidence(
+                    native_resources["text_tracks"],
+                    user_agent=settings.instagram_user_agent,
+                )
+                result["media"]["native_resources"]["text_track_evidence"] = text_track_evidence
+                result["provenance"].append(
+                    {
+                        "source": "instagram_native_text_track",
+                        "status": text_track_evidence["status"],
+                        "reason": text_track_evidence["reason"],
+                    }
+                )
+                native_resource_covered = text_track_evidence.get("semantic_coverage", False)
+
             need_media = (
                 mode in {"deep", "evidence"}
                 or (
@@ -209,6 +238,16 @@ class Extractor:
                 summary_parts.append(result["native"]["caption"])
 
             for entry in result.get("media", {}).get("native_resources", {}).get("semantic_text", []):
+                text = entry.get("text")
+                if text and text not in summary_parts:
+                    summary_parts.append(text)
+
+            for entry in (
+                result.get("media", {})
+                .get("native_resources", {})
+                .get("text_track_evidence", {})
+                .get("semantic_text", [])
+            ):
                 text = entry.get("text")
                 if text and text not in summary_parts:
                     summary_parts.append(text)
