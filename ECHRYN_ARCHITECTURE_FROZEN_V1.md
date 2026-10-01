@@ -110,6 +110,13 @@ max_frames=...
 
 A multimodal caller can inspect the returned frames itself. Echryn does not need its own paid multimodal model for that use case.
 
+Current frame delivery implementation:
+- `urls` is the default and persists compressed WebP evidence in the local Echryn data directory.
+- returned URLs are temporary HMAC-signed frame endpoints.
+- `inline` remains available explicitly for base64 data URLs.
+- `none` suppresses frame delivery.
+- production object storage can later replace the local store without changing the evidence contract.
+
 ## Interpretation vs evidence
 Echryn V1 focuses on **evidence**:
 - what native data says
