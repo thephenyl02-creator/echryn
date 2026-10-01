@@ -5,6 +5,7 @@ from typing import Any
 from app.adapters.instagram import InstagramClient, normalize_native, resolve_instagram_url
 from app.services.coverage import semantic_coverage
 from app.services.media import download_media, extract_frames, local_visual_analyze, probe_media, temp_workspace
+from app.services.native_resources import inspect_native_resources
 from app.services.speech import speech_analyze
 from app.storage.cache import FileCache
 
@@ -64,7 +65,28 @@ class Extractor:
             coverage = semantic_coverage(result["native"])
             result["diagnostics"]["semantic_coverage"] = coverage
 
-            need_media = mode in {"deep", "evidence"} or (mode == "auto" and not coverage["covered"])
+            native_resources = inspect_native_resources(
+                normalized["item"],
+                normalized["media"],
+            )
+            result["media"]["native_resources"] = native_resources
+            result["provenance"].append(
+                {
+                    "source": "instagram_native_resources",
+                    "status": native_resources["status"],
+                    "reason": native_resources["reason"],
+                }
+            )
+
+            native_resource_covered = native_resources.get("semantic_coverage", False)
+            need_media = (
+                mode in {"deep", "evidence"}
+                or (
+                    mode == "auto"
+                    and not coverage["covered"]
+                    and not native_resource_covered
+                )
+            )
 
             if mode == "metadata":
                 result["visual"] = {"status": "skipped_by_policy", "reason": "metadata mode"}
@@ -186,6 +208,11 @@ class Extractor:
             if result["native"].get("caption"):
                 summary_parts.append(result["native"]["caption"])
 
+            for entry in result.get("media", {}).get("native_resources", {}).get("semantic_text", []):
+                text = entry.get("text")
+                if text and text not in summary_parts:
+                    summary_parts.append(text)
+
             ocr_payload = result.get("visual", {}).get("ocr", {})
             ocr_text = ocr_payload.get("prominent_text") or ocr_payload.get("text")
             if ocr_text:
@@ -200,9 +227,17 @@ class Extractor:
                 elif isinstance(speech_value, str):
                     summary_parts.append(speech_value)
 
+            effective_coverage = dict(coverage)
+            if native_resource_covered and not effective_coverage.get("covered"):
+                effective_coverage = {
+                    "covered": True,
+                    "substantive_sources": ["native_resource_text"],
+                    "reason": "substantive_native_resource_text",
+                }
+
             result["summary"] = {
                 "text": "\n\n".join(summary_parts) if summary_parts else "No substantive text summary available.",
-                "semantic_coverage": coverage,
+                "semantic_coverage": effective_coverage,
             }
 
             self.cache.put(cache_key, result)
