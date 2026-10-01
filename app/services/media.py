@@ -1,5 +1,8 @@
 import asyncio
 import base64
+import hashlib
+import hmac
+import time
 import json
 import re
 import subprocess
@@ -580,6 +583,37 @@ def select_representative_frame_indices(
     return sorted(selected)
 
 
+def _frame_signature(extraction_id: str, filename: str, expires: int) -> str:
+    secret = settings.echryn_api_key or "change-me"
+    payload = f"{extraction_id}:{filename}:{expires}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def build_frame_url(extraction_id: str, filename: str, now: int | None = None) -> str:
+    issued = int(time.time() if now is None else now)
+    expires = issued + settings.echryn_frame_url_ttl_seconds
+    signature = _frame_signature(extraction_id, filename, expires)
+    return (
+        f"{settings.echryn_public_base_url.rstrip('/')}"
+        f"/v1/frames/{extraction_id}/{filename}"
+        f"?exp={expires}&sig={signature}"
+    )
+
+
+def validate_frame_signature(
+    extraction_id: str,
+    filename: str,
+    expires: int,
+    signature: str,
+    now: int | None = None,
+) -> bool:
+    current = int(time.time() if now is None else now)
+    if expires < current:
+        return False
+    expected = _frame_signature(extraction_id, filename, expires)
+    return hmac.compare_digest(expected, signature)
+
+
 def _webp_bytes(path: Path) -> tuple[bytes, int, int]:
     with Image.open(path) as image:
         image = image.convert("RGB")
@@ -688,10 +722,7 @@ async def local_visual_analyze(
                         "width": width,
                         "height": height,
                         "compressed_bytes": compressed_bytes,
-                        "url": (
-                            f"{settings.echryn_public_base_url.rstrip('/')}"
-                            f"/v1/frames/{extraction_id}/{stored.name}"
-                        ),
+                        "url": build_frame_url(extraction_id, stored.name),
                         "delivery": "url",
                     }
                 )
