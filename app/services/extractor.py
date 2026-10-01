@@ -19,10 +19,14 @@ class Extractor:
         url: str,
         mode: str = "auto",
         multimodal: bool = False,
+        frame_delivery: str = "urls",
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         resolved = resolve_instagram_url(url)
-        cache_key = f"instagram-{resolved['media_id']}-{mode}-mm{int(multimodal)}"
+        cache_key = (
+            f"instagram-{resolved['media_id']}-{mode}"
+            f"-mm{int(multimodal)}-fd{frame_delivery}"
+        )
         request_id = hashlib.sha256(cache_key.encode()).hexdigest()[:20]
 
         if not force_refresh:
@@ -42,7 +46,12 @@ class Extractor:
             "media": {},
             "summary": {},
             "provenance": [],
-            "diagnostics": {"mode": mode, "multimodal": multimodal, "cached": False},
+            "diagnostics": {
+                "mode": mode,
+                "multimodal": multimodal,
+                "frame_delivery": frame_delivery,
+                "cached": False,
+            },
         }
 
         try:
@@ -78,9 +87,11 @@ class Extractor:
                         }
                     )
 
+                    visual_delivery = frame_delivery if (multimodal or mode == "evidence") else "none"
                     result["visual"] = await local_visual_analyze(
                         frames,
-                        include_inline_frames=(multimodal or mode == "evidence"),
+                        frame_delivery=visual_delivery,
+                        extraction_id=request_id,
                         run_ocr=not multimodal,
                     )
 
