@@ -580,7 +580,7 @@ def select_representative_frame_indices(
     return sorted(selected)
 
 
-def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
+def _webp_bytes(path: Path) -> tuple[bytes, int, int]:
     with Image.open(path) as image:
         image = image.convert("RGB")
         width, height = image.size
@@ -598,14 +598,32 @@ def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
             method=6,
         )
 
-    raw = buffer.getvalue()
+    return buffer.getvalue(), width, height
+
+
+def _webp_data_url(path: Path) -> tuple[str, int, int, int]:
+    raw, width, height = _webp_bytes(path)
     encoded = base64.b64encode(raw).decode("ascii")
     return f"data:image/webp;base64,{encoded}", len(raw), width, height
 
 
+def _store_webp_frame(
+    path: Path,
+    extraction_id: str,
+    frame_index: int,
+) -> tuple[Path, int, int, int]:
+    raw, width, height = _webp_bytes(path)
+    frame_dir = settings.data_dir / settings.echryn_frame_store_subdir / extraction_id
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    dest = frame_dir / f"frame-{frame_index:03d}.webp"
+    dest.write_bytes(raw)
+    return dest, len(raw), width, height
+
+
 async def local_visual_analyze(
     frames: list[Path],
-    include_inline_frames: bool = False,
+    frame_delivery: str = "urls",
+    extraction_id: str | None = None,
     run_ocr: bool = True,
 ) -> dict[str, Any]:
     ocr_entries: list[dict[str, Any]] = []
@@ -633,25 +651,54 @@ async def local_visual_analyze(
     prominent_text = "\n".join(prominent_lines).strip()
 
     visual_frames: list[dict[str, Any]] = []
-    if include_inline_frames:
+    if frame_delivery != "none":
         selected_indices = select_representative_frame_indices(
             frames,
             getattr(settings, "echryn_evidence_max_frames", 6),
         )
         for index in selected_indices:
-            data_url, compressed_bytes, width, height = _webp_data_url(frames[index])
-            visual_frames.append(
-                {
-                    "frame_index": index,
-                    "timestamp_seconds": _frame_timestamp_seconds(frames[index], index),
-                    "mime_type": "image/webp",
-                    "width": width,
-                    "height": height,
-                    "compressed_bytes": compressed_bytes,
-                    "data_url": data_url,
-                    "selection": "perceptual_novelty",
-                }
-            )
+            frame_payload: dict[str, Any] = {
+                "frame_index": index,
+                "timestamp_seconds": _frame_timestamp_seconds(frames[index], index),
+                "mime_type": "image/webp",
+                "selection": "perceptual_novelty",
+            }
+
+            if frame_delivery == "inline":
+                data_url, compressed_bytes, width, height = _webp_data_url(frames[index])
+                frame_payload.update(
+                    {
+                        "width": width,
+                        "height": height,
+                        "compressed_bytes": compressed_bytes,
+                        "data_url": data_url,
+                        "delivery": "inline",
+                    }
+                )
+            elif frame_delivery == "urls":
+                if not extraction_id:
+                    raise RuntimeError("extraction_id is required for URL frame delivery")
+                stored, compressed_bytes, width, height = _store_webp_frame(
+                    frames[index],
+                    extraction_id,
+                    index,
+                )
+                frame_payload.update(
+                    {
+                        "width": width,
+                        "height": height,
+                        "compressed_bytes": compressed_bytes,
+                        "url": (
+                            f"{settings.echryn_public_base_url.rstrip('/')}"
+                            f"/v1/frames/{extraction_id}/{stored.name}"
+                        ),
+                        "delivery": "url",
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported frame delivery mode: {frame_delivery}")
+
+            visual_frames.append(frame_payload)
 
     has_visual_evidence = bool(combined_text or visual_frames)
     return {
