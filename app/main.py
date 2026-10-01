@@ -1,11 +1,10 @@
-from pathlib import Path
-
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, ORJSONResponse
 
 from app.config import settings
 from app.models.schemas import ExtractionAccepted, ExtractionRequest, ExtractionResult
 from app.services.extractor import Extractor
+from app.services.media import validate_frame_signature
 
 app = FastAPI(
     title="Echryn — Reels API",
@@ -80,10 +79,13 @@ async def get_extraction(extraction_id: str):
     return result
 
 
-@app.get("/v1/frames/{extraction_id}/{filename}", dependencies=[Depends(require_api_key)])
-async def get_frame(extraction_id: str, filename: str):
+@app.get("/v1/frames/{extraction_id}/{filename}")
+async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
     if "/" in filename or "\\" in filename or not filename.endswith(".webp"):
         raise HTTPException(status_code=400, detail="Invalid frame filename")
+
+    if not validate_frame_signature(extraction_id, filename, exp, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired frame URL")
 
     frame_root = settings.data_dir / settings.echryn_frame_store_subdir / extraction_id
     frame_path = (frame_root / filename).resolve()
