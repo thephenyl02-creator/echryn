@@ -67,29 +67,42 @@ def _extract_text_track_urls(item: dict[str, Any]) -> list[dict[str, Any]]:
     tracks: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for path, key, value in _walk(item):
-        # Only treat the current field as text-bearing. Do not inherit a
-        # "caption" match from an ancestor such as caption.user.profile_pic_url.
-        if not _TEXT_KEY_RE.search(key):
-            continue
+    def add_track(path: str, value: Any, inherited: dict[str, Any] | None = None) -> None:
+        metadata = inherited or {}
 
-        if isinstance(value, str) and value.startswith(("http://", "https://")):
-            if value not in seen:
+        if isinstance(value, str):
+            if value.startswith(("http://", "https://")) and value not in seen:
                 seen.add(value)
-                tracks.append({"path": path, "url": html.unescape(value)})
-        elif isinstance(value, dict):
+                tracks.append(
+                    {
+                        "path": path,
+                        "url": html.unescape(value),
+                        "language": metadata.get("language") or metadata.get("lang"),
+                        "mime_type": metadata.get("mime_type") or metadata.get("mimeType"),
+                    }
+                )
+            return
+
+        if isinstance(value, dict):
+            local_metadata = {
+                "language": value.get("language") or value.get("lang") or metadata.get("language"),
+                "mime_type": value.get("mime_type") or value.get("mimeType") or metadata.get("mime_type"),
+            }
             for field in ("url", "src", "uri"):
-                url = value.get(field)
-                if isinstance(url, str) and url.startswith(("http://", "https://")) and url not in seen:
-                    seen.add(url)
-                    tracks.append(
-                        {
-                            "path": f"{path}.{field}",
-                            "url": html.unescape(url),
-                            "language": value.get("language") or value.get("lang"),
-                            "mime_type": value.get("mime_type") or value.get("mimeType"),
-                        }
-                    )
+                if field in value:
+                    add_track(f"{path}.{field}", value[field], local_metadata)
+            return
+
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                add_track(f"{path}[{index}]", child, metadata)
+
+    for path, key, value in _walk(item):
+        # Match the current field itself. This allows real containers such as
+        # "caption_tracks" while avoiding inherited matches from unrelated
+        # descendants such as "caption.user.profile_pic_url".
+        if _TEXT_KEY_RE.search(key):
+            add_track(path, value)
 
     return tracks
 
