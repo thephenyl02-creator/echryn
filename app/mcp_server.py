@@ -37,7 +37,7 @@ def service_info() -> dict:
         "local_audio": {
             "speech_detection": "silero_vad",
             "transcription": "faster_whisper",
-            "licensed_music_policy": True,
+            "licensed_music_metadata": "context_only",
         },
     }
 
