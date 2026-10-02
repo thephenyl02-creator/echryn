@@ -184,7 +184,13 @@ Cache by stable platform content identity, e.g.:
 instagram:3996330882590454147
 ```
 
-Once evidence exists, repeated requests should reuse cached extraction rather than repeat platform calls, media download, FFmpeg, OCR, or transcription.
+Current V1 implementation:
+- one cache document per stable Instagram media identity
+- mode/caller/delivery variants live inside that document with independent TTLs
+- cached signed frame URLs are regenerated on reuse
+- stale persisted frame evidence is pruned using the cache TTL
+
+Once a compatible evidence variant exists, repeated requests reuse it rather than repeat platform calls, media download, FFmpeg, OCR, or transcription.
 
 ## No mandatory paid APIs
 The following are **not required** for Echryn Core:
