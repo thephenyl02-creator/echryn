@@ -5,7 +5,7 @@ from typing import Any
 from app.adapters.instagram import InstagramClient, normalize_native, resolve_instagram_url
 from app.config import settings
 from app.services.coverage import semantic_coverage
-from app.services.media import download_media, extract_frames, local_visual_analyze, probe_media, temp_workspace
+from app.services.media import cleanup_stale_frame_evidence, download_media, extract_frames, local_visual_analyze, probe_media, refresh_frame_urls, temp_workspace, touch_frame_evidence
 from app.services.native_resources import fetch_text_track_evidence, inspect_native_resources
 from app.services.speech import speech_analyze
 from app.storage.cache import FileCache
@@ -16,6 +16,41 @@ class Extractor:
         self.cache = FileCache()
         self.instagram = InstagramClient()
 
+    @staticmethod
+    def request_keys(
+        resolved: dict[str, Any],
+        mode: str,
+        multimodal: bool,
+        frame_delivery: str,
+    ) -> tuple[str, str, str]:
+        identity = f"instagram-{resolved['media_id']}"
+        variant = f"{mode}-mm{int(multimodal)}-fd{frame_delivery}"
+        request_id = hashlib.sha256(f"{identity}:{variant}".encode()).hexdigest()[:20]
+        return identity, variant, request_id
+
+    def get_cached_result(
+        self,
+        resolved: dict[str, Any],
+        mode: str,
+        multimodal: bool,
+        frame_delivery: str,
+    ) -> dict[str, Any] | None:
+        identity, variant, request_id = self.request_keys(
+            resolved,
+            mode,
+            multimodal,
+            frame_delivery,
+        )
+        cached = self.cache.get_variant(identity, variant)
+        if not cached:
+            return None
+
+        cached["id"] = request_id
+        cached.setdefault("diagnostics", {})["cached"] = True
+        refresh_frame_urls(cached)
+        touch_frame_evidence(request_id)
+        return cached
+
     async def extract(
         self,
         url: str,
@@ -25,16 +60,23 @@ class Extractor:
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         resolved = resolve_instagram_url(url)
-        cache_key = (
-            f"instagram-{resolved['media_id']}-{mode}"
-            f"-mm{int(multimodal)}-fd{frame_delivery}"
+        identity, variant, request_id = self.request_keys(
+            resolved,
+            mode,
+            multimodal,
+            frame_delivery,
         )
-        request_id = hashlib.sha256(cache_key.encode()).hexdigest()[:20]
+
+        cleanup_stale_frame_evidence(settings.echryn_cache_ttl_seconds)
 
         if not force_refresh:
-            cached = self.cache.get(cache_key)
+            cached = self.get_cached_result(
+                resolved,
+                mode,
+                multimodal,
+                frame_delivery,
+            )
             if cached:
-                cached.setdefault("diagnostics", {})["cached"] = True
                 return cached
 
         result: dict[str, Any] = {
@@ -279,7 +321,7 @@ class Extractor:
                 "semantic_coverage": effective_coverage,
             }
 
-            self.cache.put(cache_key, result)
+            self.cache.put_variant(identity, variant, result)
             return result
 
         except Exception as e:
