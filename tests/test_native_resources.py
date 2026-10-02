@@ -157,3 +157,28 @@ def test_caption_ancestor_does_not_turn_nested_image_into_text_track():
     result = inspect_native_resources(item, {"dash_info": None})
 
     assert result["text_tracks"] == []
+
+
+def test_dash_resource_urls_ignore_xml_namespace():
+    media = {
+        "dash_info": (
+            '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" '
+            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+            '<Period><AdaptationSet>'
+            '<Representation><BaseURL>'
+            'https://cdn.example.com/video.mp4?x=1&amp;y=2'
+            '</BaseURL></Representation>'
+            '<Representation><BaseURL>'
+            'https://cdn.example.com/audio.mp4'
+            '</BaseURL></Representation>'
+            '</AdaptationSet></Period></MPD>'
+        )
+    }
+
+    result = inspect_native_resources({}, media)
+
+    assert result["dash"]["resource_urls"] == [
+        "https://cdn.example.com/video.mp4?x=1&y=2",
+        "https://cdn.example.com/audio.mp4",
+    ]
+    assert result["dash"]["resource_count"] == 2
