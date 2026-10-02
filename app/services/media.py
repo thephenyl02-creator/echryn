@@ -5,12 +5,14 @@ import hmac
 import time
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from difflib import SequenceMatcher
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
@@ -614,6 +616,75 @@ def validate_frame_signature(
     return hmac.compare_digest(expected, signature)
 
 
+def refresh_frame_urls(result: dict[str, Any]) -> None:
+    extraction_id = str(result.get("id") or "")
+    if not extraction_id:
+        return
+
+    frames = result.get("visual", {}).get("frames", [])
+    if not isinstance(frames, list):
+        return
+
+    for frame in frames:
+        if not isinstance(frame, dict) or frame.get("delivery") != "url":
+            continue
+
+        filename = frame.get("filename")
+        if not filename:
+            existing_url = frame.get("url")
+            if isinstance(existing_url, str):
+                filename = Path(urlparse(existing_url).path).name
+        if not filename:
+            index = frame.get("frame_index")
+            if isinstance(index, int):
+                filename = f"frame-{index:03d}.webp"
+        if not filename:
+            continue
+
+        frame["filename"] = filename
+        frame["url"] = build_frame_url(extraction_id, filename)
+
+
+def touch_frame_evidence(extraction_id: str) -> None:
+    if not extraction_id:
+        return
+    frame_dir = settings.data_dir / settings.echryn_frame_store_subdir / extraction_id
+    if frame_dir.is_dir():
+        now = time.time()
+        frame_dir.touch(exist_ok=True)
+        try:
+            import os
+            os.utime(frame_dir, (now, now))
+        except OSError:
+            pass
+
+
+def cleanup_stale_frame_evidence(max_age_seconds: int, now: float | None = None) -> int:
+    root = settings.data_dir / settings.echryn_frame_store_subdir
+    if not root.exists():
+        return 0
+
+    current = time.time() if now is None else now
+    removed = 0
+
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            age = current - child.stat().st_mtime
+        except OSError:
+            continue
+        if age <= max_age_seconds:
+            continue
+        try:
+            shutil.rmtree(child)
+            removed += 1
+        except OSError:
+            continue
+
+    return removed
+
+
 def _webp_bytes(path: Path) -> tuple[bytes, int, int]:
     with Image.open(path) as image:
         image = image.convert("RGB")
@@ -722,6 +793,7 @@ async def local_visual_analyze(
                         "width": width,
                         "height": height,
                         "compressed_bytes": compressed_bytes,
+                        "filename": stored.name,
                         "url": build_frame_url(extraction_id, stored.name),
                         "delivery": "url",
                     }
