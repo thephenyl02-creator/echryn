@@ -18,7 +18,7 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
   - `deep`: always inspect the actual media.
 - Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frame evidence and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio treats native music metadata as context only, runs local Silero VAD whenever an audio stream exists, and runs local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
-- Caches structured results by Instagram media ID + mode + multimodal capability.
+- Caches request variants under one stable Instagram media identity. Cached signed frame URLs are refreshed on reuse.
 - Exposes REST and MCP over the same core.
 
 ## Security model
@@ -98,7 +98,7 @@ Add Instagram session secrets through your cloud secret manager rather than comm
 
 ## Production notes
 
-The included cache is intentionally filesystem-backed for a single-instance prototype. Cloud Run filesystems are ephemeral, so before multi-instance production use, replace `FileCache` with D1/Redis/Postgres/object-backed cache. The extraction core is isolated so this swap does not change the API contract.
+The included cache is filesystem-backed for a single-instance V1. Each Instagram media ID owns one cache document containing independently expiring request variants. Stored frame evidence is pruned with the cache TTL, and signed frame URLs are regenerated when cached results are reused. Cloud Run filesystems are ephemeral, so multi-instance production should replace the filesystem cache/frame store with Redis/Postgres plus object storage without changing the API contract.
 
 
 ## Audio dependency compatibility
