@@ -1,5 +1,6 @@
 import html
 import re
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
@@ -117,10 +118,28 @@ def _inspect_dash(dash_info: Any) -> dict[str, Any]:
 
     decoded = html.unescape(dash_info)
     urls: list[str] = []
-    for match in _URL_RE.findall(decoded):
-        url = match.rstrip(",'\"<>")
-        if url and url not in urls:
-            urls.append(url)
+
+    # Prefer actual DASH BaseURL elements. A generic URL regex also captures
+    # XML namespace URLs and can overrun into closing tags.
+    try:
+        root = ET.fromstring(decoded)
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "BaseURL":
+                continue
+            value = (element.text or "").strip()
+            if value.startswith(("http://", "https://")) and value not in urls:
+                urls.append(value)
+    except ET.ParseError:
+        # Some Instagram responses are fragments rather than full MPDs. Fall
+        # back to bounded BaseURL extraction rather than scanning every URL.
+        for match in re.finditer(
+            r"<BaseURL[^>]*>\s*(https?://.*?)\s*</BaseURL>",
+            decoded,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            value = match.group(1).strip()
+            if value not in urls:
+                urls.append(value)
 
     lower = decoded.lower()
     text_signal = any(
