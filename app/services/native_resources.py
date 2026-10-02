@@ -141,6 +141,16 @@ def _inspect_dash(dash_info: Any) -> dict[str, Any]:
             if value not in urls:
                 urls.append(value)
 
+        # Backward-compatible fallback for simplified/plain resource lists.
+        # Only use this when no BaseURL tags were found, and keep tokens bounded
+        # to whitespace so XML namespace URLs are not swept up from real MPDs.
+        if not urls and "<" not in decoded and ">" not in decoded:
+            for token in decoded.split():
+                if token.startswith(("http://", "https://")):
+                    value = token.rstrip(",'\"")
+                    if value not in urls:
+                        urls.append(value)
+
     lower = decoded.lower()
     text_signal = any(
         token in lower
