@@ -41,13 +41,20 @@ async def _run_extract(req: ExtractionRequest):
 @app.post("/v1/extractions", response_model=ExtractionAccepted, dependencies=[Depends(require_api_key)])
 async def create_extraction(req: ExtractionRequest, background: BackgroundTasks):
     resolved = __import__("app.adapters.instagram", fromlist=["resolve_instagram_url"]).resolve_instagram_url(str(req.url))
-    import hashlib
-    cache_key = (
-        f"instagram-{resolved['media_id']}-{req.mode}"
-        f"-mm{int(req.multimodal)}-fd{req.frame_delivery}"
+    _, _, request_id = extractor.request_keys(
+        resolved,
+        req.mode,
+        req.multimodal,
+        req.frame_delivery,
     )
-    request_id = hashlib.sha256(cache_key.encode()).hexdigest()[:20]
-    cached = extractor.cache.get(cache_key) if not req.force_refresh else None
+    cached = None
+    if not req.force_refresh:
+        cached = extractor.get_cached_result(
+            resolved,
+            req.mode,
+            req.multimodal,
+            req.frame_delivery,
+        )
     if cached:
         RESULTS[request_id] = cached
         return ExtractionAccepted(id=request_id, status="complete", cached=True)
