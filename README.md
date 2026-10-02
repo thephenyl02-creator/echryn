@@ -11,13 +11,14 @@ Echryn turns a short-form content URL into structured information. Instagram Ree
 - Uses authenticated Instagram media-info as the cheap first layer.
 - Extracts creator, caption, engagement, media metadata, music/audio metadata and native text-bearing fields.
 - Runs a semantic coverage gate so metadata is not confused with the actual message of the post.
-- Supports three modes:
+- Supports four modes:
   - `metadata`: never download media.
   - `auto`: deep-inspect only when native data is not semantically sufficient.
+  - `evidence`: return representative frame evidence plus audio evidence.
   - `deep`: always inspect the actual media.
-- Deep path temporarily downloads the video, probes it with FFprobe, samples frames with FFmpeg, sends frames to an optional hosted vision adapter, and sends media to an optional hosted speech adapter.
+- Deep/evidence paths temporarily download the video, probe it with FFprobe, and sample frames with FFmpeg. Multimodal callers receive compressed WebP frame evidence and skip OCR. Non-multimodal callers can use local Tesseract OCR. Audio treats native music metadata as context only, runs local Silero VAD whenever an audio stream exists, and runs local faster-whisper only when useful speech is present.
 - Deletes temporary media automatically when the extraction workspace closes.
-- Caches structured results by Instagram media ID + mode.
+- Caches request variants under one stable Instagram media identity. Cached signed frame URLs are refreshed on reuse.
 - Exposes REST and MCP over the same core.
 
 ## Security model
@@ -32,7 +33,7 @@ Echryn does not attempt CAPTCHA bypass, challenge bypass, rate-limit evasion, or
 cp .env.example .env
 # fill INSTAGRAM_SESSIONID and optionally csrftoken/ds_user_id
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8080
+python -m uvicorn app.main:app --port 8080
 ```
 
 Health:
@@ -62,26 +63,26 @@ python -m app.mcp_server
 
 Tools:
 
-- `extract_url(url, mode="auto", force_refresh=false)`
+- `extract_url(url, mode="auto", multimodal=false, force_refresh=false)`
 - `service_info()`
 
-## Hosted vision adapter contract
+## Local visual policy
 
-Set `VISION_API_URL` to a small wrapper endpoint under your control. Echryn POSTs:
+Set `multimodal=true` for multimodal callers. Echryn then skips OCR and returns representative compressed frames directly. Non-multimodal callers use local OCR as a fallback text representation.
 
-```json
-{
-  "model": "optional-model-name",
-  "task": "Extract on-screen creator text, UI/background text, scene meaning, actions, products/sites, and uncertainties. Return concise JSON.",
-  "images": ["data:image/jpeg;base64,..."]
-}
+## Local audio pipeline
+
+Audio processing is local:
+
+```text
+native audio metadata (context only)
+→ Silero VAD for every available audio stream
+→ no useful speech: no_speech_detected
+→ speech: faster-whisper
+→ transcript + language + segment/word timestamps + provenance
 ```
 
-Return any JSON object; Echryn stores it under `visual.value` with provenance.
-
-## Hosted speech adapter contract
-
-Set `SPEECH_API_URL` to a wrapper that accepts multipart form-data with `file` and optional `model`. Return JSON containing a `text` field. Empty text is normalized to `no_speech_detected`.
+The default transcription model is `base` on CPU with `int8` compute. The model is loaded lazily only when transcription is actually required.
 
 ## Cloud Run
 
@@ -93,8 +94,48 @@ gcloud run deploy echryn \
   --set-env-vars ECHRYN_API_KEY='YOUR_API_KEY'
 ```
 
-Add Instagram and provider secrets through your cloud secret manager rather than command-line history.
+Add Instagram session secrets through your cloud secret manager rather than command-line history.
 
 ## Production notes
 
-The included cache is intentionally filesystem-backed for a single-instance prototype. Cloud Run filesystems are ephemeral, so before multi-instance production use, replace `FileCache` with D1/Redis/Postgres/object-backed cache. The extraction core is isolated so this swap does not change the API contract.
+The included cache is filesystem-backed for a single-instance V1. Each Instagram media ID owns one cache document containing independently expiring request variants. Stored frame evidence is pruned with the cache TTL, and signed frame URLs are regenerated when cached results are reused. Cloud Run filesystems are ephemeral, so multi-instance production should replace the filesystem cache/frame store with Redis/Postgres plus object storage without changing the API contract.
+
+
+## Audio dependency compatibility
+
+Echryn pins `av<19` because faster-whisper 1.2.1 still calls
+`av.open(..., metadata_errors="ignore")`, while PyAV 19 removed that argument.
+
+
+## Frame delivery
+
+Representative frames support three delivery modes:
+
+- `urls` (default): persist compressed WebP evidence under the Echryn data directory and return signed temporary URLs.
+- `inline`: return base64 WebP data URLs for callers that explicitly need inline evidence.
+- `none`: suppress frame payload delivery.
+
+Request example:
+
+```json
+{
+  "url": "https://www.instagram.com/reel/...",
+  "mode": "evidence",
+  "multimodal": true,
+  "frame_delivery": "urls"
+}
+```
+
+Signed frame URLs expire after `ECHRYN_FRAME_URL_TTL_SECONDS` (7 days by default). The prototype uses the configured Echryn API key as the signing secret. Production object storage can replace this local frame store without changing the extraction evidence contract.
+
+
+## Native resource inspection
+
+Before downloading the full video in `auto` mode, Echryn now inspects Instagram-native text-bearing resources:
+
+- subtitle/caption/transcript-like fields in the media-info object
+- exposed text-track URLs
+- DASH/manifests for text-track signals
+- native WebVTT/TTML text tracks when URLs are available
+
+If substantive native text is found, Echryn can satisfy semantic coverage without downloading and processing the full media file. If native text resources are absent, non-substantive, or fail to load, Echryn falls back to the existing media evidence pipeline.

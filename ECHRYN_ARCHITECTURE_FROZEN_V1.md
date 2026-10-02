@@ -26,20 +26,29 @@ URL / media identifier
    Does native data actually explain the content?
    yes → RETURN
    no  → inspect native resources/manifests/text tracks
+          - scan native subtitle/caption/transcript fields
+          - inspect DASH for text-track signals/resources
+          - fetch exposed WebVTT/TTML tracks when available
   ↓
    enough? → RETURN
-   not enough → TEMPORARY MEDIA DOWNLOAD
+   not enough / fetch failed → TEMPORARY MEDIA DOWNLOAD
   ↓
 4. MEDIA EVIDENCE LAYER
    FFprobe + FFmpeg:
-   scene changes, timestamps, representative frames,
-   perceptual dedupe, frame sequence
+   scene-change detection, true timestamps, representative frames,
+   temporal fallback anchors, perceptual dedupe, frame sequence
   ↓
-5. LOCAL VISUAL EXTRACTION
-   V1:
-   - OCR
+5. VISUAL EVIDENCE POLICY
+   If caller is multimodal:
+   - return representative compressed frames directly
+   - skip OCR entirely
+   - caller interprets the frames itself
+
+   If caller is not multimodal:
+   - run local OCR as a fallback text representation
    - Tesseract initially
-   - stronger local/open OCR later (PaddleOCR / GOT-OCR / etc.)
+   - stronger local/open OCR later if needed
+
    Later optional local CV:
    - embeddings
    - object detection
@@ -48,13 +57,17 @@ URL / media identifier
    No mandatory paid VLM/API.
   ↓
 6. AUDIO EVIDENCE LAYER
-   Detect whether useful speech exists.
-   - music only → skip transcription
-   - speech → local faster-whisper
+   Apply native audio metadata as a hint, not as proof of no speech.
+   - licensed music may still contain voice-over
+   - if an audio stream exists, run local Silero VAD
+   - no useful speech → no_speech_detected
+   - useful speech → local faster-whisper
+   - return transcript, language, segment timestamps, word timestamps,
+     detector statistics, model metadata and provenance
    No mandatory paid speech API.
   ↓
 7. EVIDENCE ASSEMBLY
-   Merge native + OCR + frames + speech + media metadata.
+   Merge native + frames + speech + optional OCR + media metadata.
    Preserve source + confidence/status.
   ↓
 CACHE RESULT
@@ -65,8 +78,15 @@ DELETE TEMP MEDIA / FRAMES
 ## Request modes
 - `metadata`: Native/platform information only. No media download.
 - `auto`: Cheap-first. Download media only when semantic coverage is insufficient.
-- `evidence`: Return native data + OCR + representative compressed frames + audio evidence.
+- `evidence`: Return native data + representative compressed frames + audio evidence; OCR is conditional on caller capability.
 - `deep`: Force actual media inspection even when native metadata appears sufficient.
+
+Caller capability hint:
+```json
+{"multimodal": true}
+```
+
+When `multimodal=true`, Echryn skips OCR and returns representative frame evidence directly. OCR is reserved for non-multimodal callers.
 
 `deep` does not mean “call a paid AI model.”
 
@@ -93,12 +113,19 @@ max_frames=...
 
 A multimodal caller can inspect the returned frames itself. Echryn does not need its own paid multimodal model for that use case.
 
+Current frame delivery implementation:
+- `urls` is the default and persists compressed WebP evidence in the local Echryn data directory.
+- returned URLs are temporary HMAC-signed frame endpoints.
+- `inline` remains available explicitly for base64 data URLs.
+- `none` suppresses frame delivery.
+- production object storage can later replace the local store without changing the evidence contract.
+
 ## Interpretation vs evidence
 Echryn V1 focuses on **evidence**:
 - what native data says
-- what text appears on screen
+- representative visual frames
 - what speech exists
-- what representative frames show
+- OCR only when a non-multimodal caller needs text representation
 - where each piece came from
 
 Interpretation is optional and can later use deterministic/local logic, local classifiers/encoders, an optional locally hosted VLM, or optional external adapters only if explicitly chosen.
@@ -157,7 +184,13 @@ Cache by stable platform content identity, e.g.:
 instagram:3996330882590454147
 ```
 
-Once evidence exists, repeated requests should reuse cached extraction rather than repeat platform calls, media download, FFmpeg, OCR, or transcription.
+Current V1 implementation:
+- one cache document per stable Instagram media identity
+- mode/caller/delivery variants live inside that document with independent TTLs
+- cached signed frame URLs are regenerated on reuse
+- stale persisted frame evidence is pruned using the cache TTL
+
+Once a compatible evidence variant exists, repeated requests reuse it rather than repeat platform calls, media download, FFmpeg, OCR, or transcription.
 
 ## No mandatory paid APIs
 The following are **not required** for Echryn Core:
@@ -192,22 +225,34 @@ shortcode: Dd10cOlujGD
 media ID: 3996330882590454147
 ```
 
-Current corrective milestone:
+Current visual implementation:
 ```text
-sampled frames
-→ local OCR
-→ deduplicate OCR text across frames
-→ preserve timestamps
-→ compressed frame evidence
+scene detection + temporal fallback anchors
+→ true timestamped sampled frames
+→ perceptual duplicate removal / novelty selection
+→ local OCR only for non-multimodal callers
+→ compressed WebP frame evidence
 → merge into result
 ```
 
-Audio milestone:
+Audio implementation:
 ```text
-audio
-→ local speech/no-speech decision
-→ faster-whisper only when speech exists
+native audio metadata (context only)
+→ Silero VAD at 16 kHz
+→ no useful speech: stop
+→ useful speech: faster-whisper (lazy-loaded local model)
+→ transcript + segment/word timestamps + provenance
 ```
+
+Default local transcription configuration:
+```text
+model=base
+device=cpu
+compute_type=int8
+beam_size=1
+```
+
+The Whisper model is loaded lazily only when speech reaches the transcription stage.
 
 ## Architecture-change rule
 Do not change this architecture implicitly.
