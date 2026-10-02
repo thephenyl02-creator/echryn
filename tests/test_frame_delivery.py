@@ -6,7 +6,9 @@ from PIL import Image
 
 from app.services.media import (
     build_frame_url,
+    cleanup_stale_frame_evidence,
     local_visual_analyze,
+    refresh_frame_urls,
     validate_frame_signature,
 )
 
@@ -112,3 +114,53 @@ async def test_none_frame_delivery_returns_no_frames(tmp_path):
     )
 
     assert result["frames"] == []
+
+
+def test_refresh_cached_frame_urls_reissues_signature(monkeypatch):
+    from app.services import media
+
+    monkeypatch.setattr(media.settings, "echryn_api_key", "test-secret")
+    monkeypatch.setattr(media.settings, "echryn_public_base_url", "https://api.example.com")
+    monkeypatch.setattr(media.settings, "echryn_frame_url_ttl_seconds", 600)
+
+    result = {
+        "id": "extract123",
+        "visual": {
+            "frames": [
+                {
+                    "frame_index": 2,
+                    "delivery": "url",
+                    "filename": "frame-002.webp",
+                    "url": "https://old.example/frame-002.webp?exp=1&sig=old",
+                }
+            ]
+        },
+    }
+
+    refresh_frame_urls(result)
+    url = result["visual"]["frames"][0]["url"]
+
+    assert url.startswith("https://api.example.com/v1/frames/extract123/frame-002.webp?")
+    assert "sig=old" not in url
+
+
+def test_cleanup_stale_frame_evidence(tmp_path, monkeypatch):
+    import os
+    from app.services import media
+
+    monkeypatch.setattr(media.settings, "echryn_data_dir", str(tmp_path))
+    root = tmp_path / media.settings.echryn_frame_store_subdir
+    old_dir = root / "old"
+    fresh_dir = root / "fresh"
+    old_dir.mkdir(parents=True)
+    fresh_dir.mkdir(parents=True)
+
+    now = 10_000.0
+    os.utime(old_dir, (now - 1000, now - 1000))
+    os.utime(fresh_dir, (now - 10, now - 10))
+
+    removed = cleanup_stale_frame_evidence(100, now=now)
+
+    assert removed == 1
+    assert not old_dir.exists()
+    assert fresh_dir.exists()
