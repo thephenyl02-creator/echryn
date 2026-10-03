@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, ORJSONResponse
 
@@ -5,13 +6,25 @@ from app.config import settings
 from app.models.schemas import ExtractionAccepted, ExtractionRequest, ExtractionResult
 from app.services.extractor import Extractor
 from app.services.media import validate_frame_signature
+from app.mcp_server import mcp
+
+mcp.settings.streamable_http_path = "/"
+mcp_app = mcp.streamable_http_app()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp.session_manager.run():
+        yield
 
 app = FastAPI(
-    title="Echryn â€” Reels API",
-    description="Echryn â€” The API for short-form content.",
+    title="Echryn ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Reels API",
+    description="Echryn ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â The API for short-form content.",
     version="0.1.0",
     default_response_class=ORJSONResponse,
+    lifespan=lifespan,
 )
+
+app.mount("/mcp", mcp_app)
 extractor = Extractor()
 RESULTS: dict[str, dict] = {}
 
@@ -106,3 +119,4 @@ async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
         raise HTTPException(status_code=404, detail="Frame not found")
 
     return FileResponse(frame_path, media_type="image/webp")
+

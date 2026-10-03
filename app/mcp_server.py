@@ -1,46 +1,33 @@
+﻿from typing import Literal
+
 from mcp.server.fastmcp import FastMCP
+
 from app.services.extractor import Extractor
 
-mcp = FastMCP("Echryn")
+mcp = FastMCP(
+    name="Echryn",
+    stateless_http=True,
+    json_response=True,
+)
+
 extractor = Extractor()
 
 
 @mcp.tool()
-async def extract_url(
+async def extract_reel(
     url: str,
-    mode: str = "auto",
-    multimodal: bool = False,
-    frame_delivery: str = "urls",
-    force_refresh: bool = False,
+    mode: Literal["metadata", "auto", "evidence", "deep"] = "auto",
 ) -> dict:
-    """Extract structured evidence from a short-form content URL. Instagram Reels are supported in v1."""
+    """
+    Extract structured information and evidence from an Instagram Reel URL.
+
+    Returns native metadata, semantic coverage information, visual evidence,
+    speech/transcript evidence, media details, summary, provenance, and diagnostics.
+    """
     return await extractor.extract(
         url,
-        mode=mode,
-        multimodal=multimodal,
-        frame_delivery=frame_delivery,
-        force_refresh=force_refresh,
+        mode,
+        True,
+        "urls",
+        False,
     )
-
-
-@mcp.tool()
-def service_info() -> dict:
-    """Return Echryn service capabilities."""
-    return {
-        "name": "Echryn",
-        "launch_product": "Reels API",
-        "tagline": "The API for short-form content.",
-        "supported_sources": ["instagram_reel"],
-        "modes": ["metadata", "auto", "evidence", "deep"],
-        "multimodal_ocr_bypass": True,
-        "frame_delivery": ["urls", "inline", "none"],
-        "local_audio": {
-            "speech_detection": "silero_vad",
-            "transcription": "faster_whisper",
-            "licensed_music_metadata": "context_only",
-        },
-    }
-
-
-if __name__ == "__main__":
-    mcp.run()
