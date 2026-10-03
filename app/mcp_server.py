@@ -12,6 +12,8 @@ mcp = FastMCP(
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[
+            "echryn.fenilbuilds.com",
+            "echryn.fenilbuilds.com:*",
             "echryn-4h6me7nata-ue.a.run.app",
             "echryn-4h6me7nata-ue.a.run.app:*",
             "echryn-427757463777.us-east1.run.app",
