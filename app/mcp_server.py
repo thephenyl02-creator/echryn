@@ -1,7 +1,8 @@
-﻿from typing import Literal
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 
 from app.services.extractor import Extractor
 
@@ -27,21 +28,90 @@ mcp = FastMCP(
 extractor = Extractor()
 
 
-@mcp.tool()
+def _public_result(result: dict) -> dict:
+    source = result.get("source") or {}
+    author = result.get("author") or {}
+    native = result.get("native") or {}
+    music = native.get("music") or {}
+    music_asset = music.get("music_asset_info") or {}
+
+    frames = []
+    for frame in ((result.get("visual") or {}).get("frames") or []):
+        frames.append(
+            {
+                "timestamp_seconds": frame.get("timestamp_seconds"),
+                "mime_type": frame.get("mime_type"),
+                "width": frame.get("width"),
+                "height": frame.get("height"),
+                "url": frame.get("url"),
+            }
+        )
+
+    native_public = {
+        "caption": native.get("caption"),
+        "like_count": native.get("like_count"),
+        "comment_count": native.get("comment_count"),
+        "play_count": native.get("play_count"),
+        "duration_seconds": native.get("duration_seconds"),
+        "is_ai_generated": native.get("is_ai_generated"),
+    }
+    if music_asset:
+        native_public["music"] = {
+            "title": music_asset.get("title"),
+            "artist": music_asset.get("display_artist"),
+            "is_explicit": music_asset.get("is_explicit"),
+        }
+
+    return {
+        "status": result.get("status"),
+        "source": {
+            "platform": source.get("platform"),
+            "shortcode": source.get("shortcode"),
+            "canonical_url": source.get("canonical_url"),
+        },
+        "author": {
+            "username": author.get("username"),
+            "full_name": author.get("full_name"),
+            "verified": author.get("verified"),
+        },
+        "native": native_public,
+        "visual": {
+            "status": (result.get("visual") or {}).get("status"),
+            "frames": frames,
+        },
+        "speech": result.get("speech"),
+        "summary": result.get("summary"),
+        "provenance": result.get("provenance"),
+        "diagnostics": {
+            "mode": (result.get("diagnostics") or {}).get("mode"),
+            "semantic_coverage": (result.get("diagnostics") or {}).get("semantic_coverage"),
+        },
+    }
+
+
+@mcp.tool(
+    title="Extract Instagram Reel",
+    description=(
+        "Use when the user provides a public Instagram Reel URL and wants to understand "
+        "the Reel's actual content. Retrieves public Reel metadata and, when needed, "
+        "representative visual frames plus speech or transcript evidence. "
+        "This is read-only and does not post, modify, or delete Instagram content."
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        open_world_hint=True,
+    ),
+)
 async def extract_reel(
     url: str,
     mode: Literal["metadata", "auto", "evidence", "deep"] = "auto",
 ) -> dict:
-    """
-    Extract structured information and evidence from an Instagram Reel URL.
-
-    Returns native metadata, semantic coverage information, visual evidence,
-    speech/transcript evidence, media details, summary, provenance, and diagnostics.
-    """
-    return await extractor.extract(
+    result = await extractor.extract(
         url,
         mode,
         True,
         "urls",
         False,
     )
+    return _public_result(result)
