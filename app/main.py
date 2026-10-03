@@ -7,8 +7,8 @@ from app.services.extractor import Extractor
 from app.services.media import validate_frame_signature
 
 app = FastAPI(
-    title="Echryn — Reels API",
-    description="Echryn — The API for short-form content.",
+    title="Echryn â€” Reels API",
+    description="Echryn â€” The API for short-form content.",
     version="0.1.0",
     default_response_class=ORJSONResponse,
 )
@@ -22,6 +22,7 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
+@app.get("/health")
 @app.get("/healthz")
 async def healthz():
     return {"ok": True, "service": "echryn", "version": "0.1.0"}
