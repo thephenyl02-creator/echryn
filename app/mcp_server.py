@@ -1,6 +1,7 @@
 ﻿from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.services.extractor import Extractor
 
@@ -8,6 +9,17 @@ mcp = FastMCP(
     name="Echryn",
     stateless_http=True,
     json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "echryn-4h6me7nata-ue.a.run.app",
+            "echryn-4h6me7nata-ue.a.run.app:*",
+            "echryn-427757463777.us-east1.run.app",
+            "echryn-427757463777.us-east1.run.app:*",
+            "localhost:*",
+            "127.0.0.1:*",
+        ],
+    ),
 )
 
 extractor = Extractor()
