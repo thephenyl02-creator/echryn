@@ -20,10 +20,11 @@ class Settings(BaseSettings):
     echryn_scene_min_gap_seconds: float = 0.6
     echryn_mode_default: str = "auto"
 
-    echryn_speech_model: str = "base"
+    echryn_speech_model: str = "small"
     echryn_speech_device: str = "cpu"
     echryn_speech_compute_type: str = "int8"
     echryn_whisper_beam_size: int = 1
+    echryn_speech_min_language_probability: float = 0.50
     echryn_vad_threshold: float = 0.55
     echryn_vad_min_speech_ms: int = 350
     echryn_vad_min_silence_ms: int = 300
