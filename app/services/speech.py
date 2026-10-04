@@ -205,6 +205,13 @@ async def speech_analyze(path: Path, native: dict[str, Any]) -> dict[str, Any]:
             "detector": detector,
         }
 
+    model_info = {
+        "engine": "faster_whisper",
+        "model": settings.echryn_speech_model,
+        "device": settings.echryn_speech_device,
+        "compute_type": settings.echryn_speech_compute_type,
+    }
+
     if not transcript["text"]:
         return {
             "status": "no_speech_detected",
@@ -212,12 +219,23 @@ async def speech_analyze(path: Path, native: dict[str, Any]) -> dict[str, Any]:
             "reason": "vad_detected_voice_but_transcript_was_empty",
             "policy": policy,
             "detector": detector,
-            "model": {
-                "engine": "faster_whisper",
-                "model": settings.echryn_speech_model,
-                "device": settings.echryn_speech_device,
-                "compute_type": settings.echryn_speech_compute_type,
+            "model": model_info,
+        }
+
+    if transcript["language_probability"] < settings.echryn_speech_min_language_probability:
+        return {
+            "status": "low_confidence",
+            "source": "faster_whisper",
+            "reason": "language_detection_confidence_below_threshold",
+            "policy": policy,
+            "detector": detector,
+            "model": model_info,
+            "confidence": {
+                "language": transcript["language"],
+                "language_probability": transcript["language_probability"],
+                "minimum_required": settings.echryn_speech_min_language_probability,
             },
+            "value": transcript,
         }
 
     return {
@@ -225,11 +243,6 @@ async def speech_analyze(path: Path, native: dict[str, Any]) -> dict[str, Any]:
         "source": "faster_whisper",
         "policy": policy,
         "detector": detector,
-        "model": {
-            "engine": "faster_whisper",
-            "model": settings.echryn_speech_model,
-            "device": settings.echryn_speech_device,
-            "compute_type": settings.echryn_speech_compute_type,
-        },
+        "model": model_info,
         "value": transcript,
     }
