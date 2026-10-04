@@ -24,12 +24,13 @@ class Settings(BaseSettings):
     echryn_speech_device: str = "cpu"
     echryn_speech_compute_type: str = "int8"
     echryn_whisper_beam_size: int = 1
-    echryn_speech_min_language_probability: float = 0.50
+    echryn_speech_min_language_probability: float = 0.60
     echryn_vad_threshold: float = 0.55
     echryn_vad_min_speech_ms: int = 350
     echryn_vad_min_silence_ms: int = 300
     echryn_vad_speech_pad_ms: int = 150
     echryn_min_total_speech_seconds: float = 0.6
+    echryn_speech_min_transcript_coverage: float = 0.35
 
     instagram_sessionid: str | None = None
     instagram_csrftoken: str | None = None
