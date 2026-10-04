@@ -222,19 +222,42 @@ async def speech_analyze(path: Path, native: dict[str, Any]) -> dict[str, Any]:
             "model": model_info,
         }
 
+    transcribed_seconds = sum(
+        max(0.0, float(segment["end"]) - float(segment["start"]))
+        for segment in transcript["segments"]
+    )
+    transcript_coverage = (
+        transcribed_seconds / vad["speech_seconds"]
+        if vad["speech_seconds"] > 0
+        else 0.0
+    )
+
+    quality = {
+        "language": transcript["language"],
+        "language_probability": transcript["language_probability"],
+        "minimum_language_probability": settings.echryn_speech_min_language_probability,
+        "transcribed_seconds": round(transcribed_seconds, 3),
+        "speech_seconds": vad["speech_seconds"],
+        "transcript_coverage": round(transcript_coverage, 4),
+        "minimum_transcript_coverage": settings.echryn_speech_min_transcript_coverage,
+    }
+
+    quality_failures: list[str] = []
     if transcript["language_probability"] < settings.echryn_speech_min_language_probability:
+        quality_failures.append("language_detection_confidence_below_threshold")
+    if transcript_coverage < settings.echryn_speech_min_transcript_coverage:
+        quality_failures.append("transcript_coverage_below_threshold")
+
+    if quality_failures:
         return {
             "status": "low_confidence",
             "source": "faster_whisper",
-            "reason": "language_detection_confidence_below_threshold",
+            "reason": quality_failures[0],
+            "quality_failures": quality_failures,
             "policy": policy,
             "detector": detector,
             "model": model_info,
-            "confidence": {
-                "language": transcript["language"],
-                "language_probability": transcript["language_probability"],
-                "minimum_required": settings.echryn_speech_min_language_probability,
-            },
+            "confidence": quality,
             "value": transcript,
         }
 
