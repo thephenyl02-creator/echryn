@@ -46,20 +46,23 @@ class InstagramSession:
 
     @classmethod
     def from_settings(cls) -> "InstagramSession | None":
-        if not settings.instagram_sessionid:
+        sessionid = (settings.instagram_sessionid or "").strip()
+        if not sessionid:
             return None
+        csrftoken = (settings.instagram_csrftoken or "").strip() or None
+        ds_user_id = (settings.instagram_ds_user_id or "").strip() or None
         return cls(
-            sessionid=settings.instagram_sessionid,
-            csrftoken=settings.instagram_csrftoken,
-            ds_user_id=settings.instagram_ds_user_id,
+            sessionid=sessionid,
+            csrftoken=csrftoken,
+            ds_user_id=ds_user_id,
         )
 
     def cookies(self) -> dict[str, str]:
-        out = {"sessionid": self.sessionid}
+        out = {"sessionid": self.sessionid.strip()}
         if self.csrftoken:
-            out["csrftoken"] = self.csrftoken
+            out["csrftoken"] = self.csrftoken.strip()
         if self.ds_user_id:
-            out["ds_user_id"] = self.ds_user_id
+            out["ds_user_id"] = self.ds_user_id.strip()
         return out
 
 
