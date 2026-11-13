@@ -8,14 +8,14 @@ class Settings(BaseSettings):
     echryn_api_key: str = "change-me"
     echryn_public_base_url: str = "http://localhost:8080"
     echryn_data_dir: str = "/tmp/echryn"
-    echryn_cache_ttl_seconds: int = 7 * 24 * 3600
+    echryn_cache_ttl_seconds: int = 24 * 3600
     echryn_max_media_mb: int = 80
     echryn_max_frames: int = 12
     echryn_evidence_max_frames: int = 6
     echryn_frame_webp_quality: int = 70
     echryn_frame_max_width: int = 640
     echryn_frame_store_subdir: str = "frames"
-    echryn_frame_url_ttl_seconds: int = 7 * 24 * 3600
+    echryn_frame_url_ttl_seconds: int = 24 * 3600
     echryn_scene_threshold: float = 0.24
     echryn_scene_min_gap_seconds: float = 0.6
     echryn_mode_default: str = "auto"

@@ -126,7 +126,7 @@ Request example:
 }
 ```
 
-Signed frame URLs expire after `ECHRYN_FRAME_URL_TTL_SECONDS` (7 days by default). The prototype uses the configured Echryn API key as the signing secret. Production object storage can replace this local frame store without changing the extraction evidence contract.
+Signed frame URLs expire after `ECHRYN_FRAME_URL_TTL_SECONDS` (24 hours by default). The prototype uses the configured Echryn API key as the signing secret. Production object storage can replace this local frame store without changing the extraction evidence contract.
 
 
 ## Native resource inspection
