@@ -77,6 +77,14 @@ def _public_result(result: dict) -> dict:
         "native": native_public,
         "visual": {
             "status": (result.get("visual") or {}).get("status"),
+            "requires_visual_inspection": bool(frames),
+            "instruction": (
+                "Retrieve and visually inspect each frame URL with an image-capable tool "
+                "before interpreting on-screen content. If retrieval is unavailable, "
+                "disclose that the frames were not inspected; do not infer their contents "
+                "from the caption or metadata."
+                if frames else None
+            ),
             "frames": frames,
         },
         "speech": result.get("speech"),
