@@ -95,6 +95,13 @@ def _public_result(result: dict) -> dict:
         "Use when the user provides a public Instagram Reel URL and wants to understand "
         "the Reel's actual content. Retrieves public Reel metadata and, when needed, "
         "representative visual frames plus speech or transcript evidence. "
+        "IMPORTANT VISUAL-EVIDENCE PROCEDURE: When visual.frames contains HTTPS URLs, "
+        "retrieve and visually inspect each returned image using an image-capable retrieval "
+        "tool before explaining on-screen content or fact-checking claims. These URL values "
+        "identify actual WebP frame files; the JSON itself does not contain the images. "
+        "Do not treat the mere presence of frame URLs as proof that the images were viewed. "
+        "If image retrieval is unavailable or fails, explicitly disclose that the frames "
+        "were not inspected and avoid unsupported visual claims. "
         "This is read-only and does not post, modify, or delete Instagram content."
     ),
     annotations=ToolAnnotations(
