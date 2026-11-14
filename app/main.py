@@ -11,6 +11,7 @@ from app.services.extractor import Extractor
 from app.services.media import validate_frame_signature
 from app.storage.frame_store import fetch_frame
 from app.mcp_server import mcp
+from app.services.v1_limiter import V1GateError
 
 mcp.settings.streamable_http_path = "/"
 mcp_app = mcp.streamable_http_app()
@@ -29,6 +30,11 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
+
+@app.exception_handler(V1GateError)
+async def v1_limit_error(_request, exc: V1GateError):
+    return ORJSONResponse(status_code=exc.status_code, content={"detail": exc.code},
+                          headers={"Retry-After": str(exc.retry_after)})
 
 app.mount("/mcp", mcp_app)
 extractor = Extractor()
@@ -81,12 +87,12 @@ async def privacy():
 <title>Echryn Privacy Policy</title><style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:800px;margin:56px auto;padding:0 24px;line-height:1.6;color:#171717}h1,h2{line-height:1.2}</style></head>
 <body>
 <h1>Echryn Privacy Policy</h1>
-<p>Effective: October 3, 2026</p>
+<p>Effective: November 14, 2026</p>
 <p>Echryn processes URLs that users explicitly provide in order to retrieve and interpret publicly accessible short-form content. The service may process public post metadata, captions, engagement counts, audio information, representative video frames, and speech/transcript evidence.</p>
 <h2>Data handling</h2>
 <p>Downloaded media is used for extraction and is designed to be temporary. Structured extraction results and derived frame artifacts may be cached transiently for performance and reliability. Hosting infrastructure may generate operational logs containing request timing, network or IP metadata, status codes, and error information. These logs are used for security, debugging, and service reliability, not behavioral advertising or profiling.</p>
 <h2>Accounts and authentication</h2>
-<p>The current public Echryn MCP tool does not require an Echryn user account. Authentication and account features may be added in the future, with this policy updated before they are required.</p>
+<p>V1 does not ask users for Instagram passwords or session cookies. Public media retrieval uses an operator-managed Instagram session, not an individual user account. The V1 MCP tool does not require an Echryn user account.</p>
 <h2>Sharing and sale</h2>
 <p>Echryn does not sell personal data. Data may be processed by infrastructure providers required to operate the service and by the public content platform necessary to retrieve the URL a user asks Echryn to analyze.</p>
 <h2>User responsibility</h2>
@@ -105,14 +111,14 @@ async def terms():
 <title>Echryn Terms of Service</title><style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:800px;margin:56px auto;padding:0 24px;line-height:1.6;color:#171717}h1,h2{line-height:1.2}</style></head>
 <body>
 <h1>Echryn Terms of Service</h1>
-<p>Effective: October 3, 2026</p>
+<p>Effective: November 14, 2026</p>
 <p>Echryn provides automated extraction and interpretation support for short-form content URLs. By using Echryn, you agree to use it lawfully and only with content you are permitted to access.</p>
 <h2>No guarantee of completeness</h2>
 <p>Extraction depends on source availability, public metadata, media accessibility, and automated analysis. Results may be incomplete, delayed, or inaccurate and should be independently verified when important decisions depend on them.</p>
 <h2>Acceptable use</h2>
 <p>Do not use Echryn to bypass access controls, retrieve private content, violate platform terms or applicable law, infringe intellectual property rights, or conduct abusive automated traffic.</p>
 <h2>Availability</h2>
-<p>The service may be changed, rate-limited, suspended, or discontinued. Public anonymous access may later be supplemented or replaced by authenticated access.</p>
+<p>This limited beta enforces shared global limits: 10 extraction admissions per rolling hour, 50 per UTC day and one active extraction. These limits are shared by all users and can be reduced without notice. The service may be suspended or discontinued.</p>
 <h2>Third-party content</h2>
 <p>Content remains subject to the rights and terms of its original platform and rights holders. Echryn does not claim ownership of third-party content.</p>
 <h2>Contact</h2>
@@ -163,6 +169,8 @@ async def _run_extract(req: ExtractionRequest):
 
 @app.post("/v1/extractions", response_model=ExtractionAccepted, dependencies=[Depends(require_api_key)])
 async def create_extraction(req: ExtractionRequest, background: BackgroundTasks):
+    if not settings.echryn_public_enabled:
+        raise V1GateError("echryn_temporarily_disabled", 503, 60)
     resolved = __import__("app.adapters.instagram", fromlist=["resolve_instagram_url"]).resolve_instagram_url(str(req.url))
     _, _, request_id = extractor.request_keys(
         resolved,

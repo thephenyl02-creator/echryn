@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     instagram_ds_user_id: str | None = None
     instagram_user_agent: str = "Mozilla/5.0"
 
+    echryn_public_enabled: bool = True
+    echryn_v1_limits_enabled: bool = False
+    echryn_v1_hourly_limit: int = 10
+    echryn_v1_daily_limit: int = 50
+    echryn_v1_lease_seconds: int = 360
+
     @property
     def data_dir(self) -> Path:
         p = Path(self.echryn_data_dir)

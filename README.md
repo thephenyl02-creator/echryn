@@ -154,5 +154,9 @@ The URL-only MCP tool extract_visual_urls avoids embedding image bytes and instr
 - External video, carousel and text-track URLs are restricted to trusted Instagram/Meta HTTPS hosts; untrusted hosts and redirects are refused. Text-track downloads are bounded.
 - Signed frame URLs still expire in 24 hours, private Google Cloud storage retains temporary evidence until its one-day lifecycle cleanup, and REST extraction requires API key.
 - Dependencies were updated (Pillow 13, Starlette 1.10, FastAPI 0.162.6, etc.) and local pip-audit reported no known vulnerabilities.
-- **Public launch blocker:** The MCP endpoint itself currently has no end-user OAuth authorization or distributed usage limits. It must not be treated as public multi-user production-ready. The previously chosen V2 authentication/quotas design remains necessary.
+- **V1 limited-beta safeguard:** The MCP endpoint has a global, GCS-backed 10/hour and 50/UTC-day admission limit with one active extraction and an emergency disable switch. V1 remains unauthenticated and is not suitable for unrestricted public scaling; per-user OAuth and quotas remain V2 work.
 - Local Cloud Run metadata cache is instance-specific. Image bytes now reside in shared storage, so HTTPS frames are not lost between instances, but cached metadata can be repeated.
+
+## V1 limited public beta (November 2026)
+
+**Read [PUBLIC_BETA.md](PUBLIC_BETA.md) before publishing or connecting.** The hosted MCP at https://echryn.fenilbuilds.com/mcp/ uses an operator-managed Instagram session for public posts. Users must never send login credentials. V1 is intentionally capped globally at 10 admissions per rolling hour, 50 per UTC calendar day, and one extraction in progress. On GCS outage it fails closed. Set ECHRYN_V1_LIMITS_ENABLED=true on Cloud Run; ECHRYN_PUBLIC_ENABLED=false is the emergency stop. Published open-source code is licensed Apache-2.0; preserve NOTICE attribution when redistributing.

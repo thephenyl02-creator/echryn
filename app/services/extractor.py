@@ -62,7 +62,13 @@ class Extractor:
         touch_frame_evidence(request_id)
         return cached
 
-    async def extract(
+    async def extract(self, url: str, mode: str = "auto", multimodal: bool = False,
+                      frame_delivery: str = "urls", force_refresh: bool = False) -> dict[str, Any]:
+        from app.services.v1_limiter import extraction_gate
+        async with extraction_gate():
+            return await self._extract_unlimited(url, mode, multimodal, frame_delivery, force_refresh)
+
+    async def _extract_unlimited(
         self,
         url: str,
         mode: str = "auto",
