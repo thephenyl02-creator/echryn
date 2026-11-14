@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from mcp.types import ImageContent, TextContent
 from app.config import settings
+from app.storage.frame_store import fetch_frame
 
 _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 _MAX_BYTES = 8 * 1024 * 1024
@@ -40,11 +41,18 @@ def make_visual_contents(result: dict, asset_index: int = 1) -> list[TextContent
         return unavailable("mime_mismatch")
     root = settings.data_dir / settings.echryn_frame_store_subdir / extraction_id
     file = (root / filename).resolve()
-    if not file.is_relative_to(root.resolve()) or not file.is_file():
-        return unavailable("asset_not_in_evidence_store")
-    if not 0 < file.stat().st_size <= _MAX_BYTES:
-        return unavailable("asset_size_out_of_range")
-    raw = file.read_bytes()
+    if not file.is_relative_to(root.resolve()):
+        return unavailable("invalid_asset_path")
+    if file.is_file():
+        if not 0 < file.stat().st_size <= _MAX_BYTES:
+            return unavailable("asset_size_out_of_range")
+        raw = file.read_bytes()
+    else:
+        raw = fetch_frame(extraction_id, filename)
+        if raw is None:
+            return unavailable("asset_not_in_evidence_store")
+        if not 0 < len(raw) <= _MAX_BYTES:
+            return unavailable("asset_size_out_of_range")
     identity = {"status": "available", "kind": "carousel_slide" if slides else "reel_frame",
                 "asset_index": asset_index, "asset_count": len(assets), "mime_type": mime,
                 "width": asset.get("width"), "height": asset.get("height")}

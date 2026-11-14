@@ -8,6 +8,7 @@ from app.config import settings
 from app.models.schemas import ExtractionAccepted, ExtractionRequest, ExtractionResult
 from app.services.extractor import Extractor
 from app.services.media import validate_frame_signature
+from app.storage.frame_store import fetch_frame
 from app.mcp_server import mcp
 
 mcp.settings.streamable_http_path = "/"
@@ -225,7 +226,13 @@ async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid frame path")
 
-    if not frame_path.is_file():
+    if frame_path.is_file():
+        return FileResponse(frame_path, media_type=media_types[extension])
+    # Instances cannot see one another's ephemeral files. Read shared private storage.
+    from fastapi.responses import Response
+    import asyncio
+    raw = await asyncio.to_thread(fetch_frame, extraction_id, filename)
+    if raw is None:
         raise HTTPException(status_code=404, detail="Frame not found")
-
-    return FileResponse(frame_path, media_type=media_types[extension])
+    return Response(content=raw, media_type=media_types[extension],
+                    headers={"Cache-Control": "private, max-age=120"})

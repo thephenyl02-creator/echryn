@@ -10,6 +10,7 @@ from PIL import Image
 
 from app.config import settings
 from app.services.media import build_frame_url
+from app.storage.frame_store import upload_frame
 
 MAX_SLIDE_BYTES = 16 * 1024 * 1024
 MAX_SLIDE_PIXELS = 25_000_000
@@ -81,6 +82,7 @@ def _store_slide_bytes(raw: bytes, extraction_id: str, slide_index: int) -> dict
     try:
         temporary.write_bytes(raw)
         os.replace(temporary, destination)
+        upload_frame(destination, extraction_id, filename, mime_type)
     finally:
         temporary.unlink(missing_ok=True)
     return {

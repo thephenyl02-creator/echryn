@@ -139,3 +139,8 @@ Before downloading the full video in `auto` mode, Echryn now inspects Instagram-
 - native WebVTT/TTML text tracks when URLs are available
 
 If substantive native text is found, Echryn can satisfy semantic coverage without downloading and processing the full media file. If native text resources are absent, non-substantive, or fail to load, Echryn falls back to the existing media evidence pipeline.
+
+## Shared frame storage (Cloud Run)
+Set ECHRYN_FRAME_BUCKET to a private Google Cloud Storage bucket to persist carousel slides and Reel frames across Cloud Run instances and revisions. Grant the Cloud Run service account storage.objectAdmin on that bucket. Keep public access prevention enabled and a one-day lifecycle delete policy, with soft-delete disabled, when one-day retention is desired. Signed /v1/frames URLs continue to use ECHRYN_API_KEY and expire after ECHRYN_FRAME_URL_TTL_SECONDS.
+
+The URL-only MCP tool extract_visual_urls avoids embedding image bytes and instructs clients with image-capable browsing to inspect each required visual URL. Browser access is client-dependent; extract_reel continues to return native image content as the reliable fallback. Do not assume URLs are visually available without inspecting them.

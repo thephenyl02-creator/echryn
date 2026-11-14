@@ -177,3 +177,30 @@ async def get_visual_image(url: str, asset_index: int = 1):
         result = await extractor.extract(url, "evidence", True, "urls", True)
         contents = make_visual_contents(result, asset_index)
     return contents
+
+
+@mcp.tool(
+    title="Extract Instagram Visual URLs",
+    description=(
+        "Return metadata and HTTPS URLs for ALL carousel slides or representative Reel frames "
+        "without sending image bytes, for low-bandwidth visual inspection. "
+        "If your ChatGPT browsing tool can open image URLs, open each relevant URL and inspect "
+        "actual pixels. Never infer visual contents from captions or URLs alone. "
+        "If browsing cannot render an image, use extract_reel native image evidence instead."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
+)
+async def extract_visual_urls(
+    url: str,
+    mode: Literal["metadata", "auto", "evidence", "deep"] = "evidence",
+):
+    result = await extractor.extract(url, mode, True, "urls", False)
+    public = _public_result(result)
+    public["visual"]["delivery"] = "https_urls"
+    public["visual"]["instruction"] = (
+        "Open each relevant visual.images[].url or visual.frames[].url using an image-capable "
+        "browsing tool before making any visual claims. For image-based carousels, inspect all "
+        "slides in order. HTTPS links are not automatically model-visible; verify access. "
+        "On failure, switch to native image blocks via extract_reel."
+    )
+    return [TextContent(type="text", text=json.dumps(public, ensure_ascii=False))]

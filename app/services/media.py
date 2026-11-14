@@ -724,6 +724,8 @@ def _store_webp_frame(
     frame_dir.mkdir(parents=True, exist_ok=True)
     dest = frame_dir / f"frame-{frame_index:03d}.webp"
     dest.write_bytes(raw)
+    from app.storage.frame_store import upload_frame
+    upload_frame(dest, extraction_id, dest.name, "image/webp")
     return dest, len(raw), width, height
 
 
@@ -785,7 +787,7 @@ async def local_visual_analyze(
             elif frame_delivery == "urls":
                 if not extraction_id:
                     raise RuntimeError("extraction_id is required for URL frame delivery")
-                stored, compressed_bytes, width, height = _store_webp_frame(
+                stored, compressed_bytes, width, height = await asyncio.to_thread(_store_webp_frame,
                     frames[index],
                     extraction_id,
                     index,
