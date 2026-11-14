@@ -113,3 +113,19 @@ async def test_mcp_auto_text_only_and_visual_escalation(monkeypatch):
     assert json.loads(blocks[0].text)["visual"]["delivery"] == "none"
     assert "mode='evidence'" in json.loads(blocks[0].text)["visual"]["instruction"]
     assert modes == ["auto"]
+
+@pytest.mark.asyncio
+async def test_auto_title_escalates_to_media(tmp_path, monkeypatch):
+    monkeypatch.setattr(extractor_module.settings, "echryn_data_dir", str(tmp_path))
+    item = {"media_type": 2, "caption": {"text": "The Open-Source AI Game Engine You Can Play Today"},
+            "video_versions": [{"url": "https://scontent.cdninstagram.com/clip.mp4", "width": 500, "height": 500}]}
+    x = Extractor()
+    async def info(_):
+        return {"items": [item]}
+    async def intercept(*args, **kwargs):
+        raise RuntimeError("EXPECTED_MEDIA_ESCALATION")
+    monkeypatch.setattr(x.instagram, "media_info", info)
+    monkeypatch.setattr(extractor_module, "download_media", intercept)
+    r = await x.extract("https://www.instagram.com/reel/DfYZz1uk0IP/", mode="auto", multimodal=True)
+    assert r["status"] == "failed"
+    assert "EXPECTED_MEDIA_ESCALATION" in r["error"]

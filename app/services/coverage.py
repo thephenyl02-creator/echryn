@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 GENERIC_HINTS = {
@@ -6,17 +7,23 @@ GENERIC_HINTS = {
 
 
 def substantive_text(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(substantive_text(value.get(k)) for k in
+                   ("text", "caption", "subtitle", "transcript", "value")
+                   if k in value)
+    if isinstance(value, list):
+        return any(substantive_text(x) for x in value[:30])
     if not isinstance(value, str):
-        return bool(value)
+        return False
     text = " ".join(value.split()).strip()
-    if len(text) < 24:
+    if len(text) < 85:
         return False
     lower = text.lower()
-    words = [w for w in lower.split() if w.isalpha()]
+    words = re.findall(r"[^\W\d_]+", lower)
     if not words:
         return False
     generic_hits = sum(1 for hint in GENERIC_HINTS if hint in lower)
-    return len(words) >= 6 and generic_hits <= 2
+    return len(words) >= 14 and generic_hits <= 2
 
 
 def semantic_coverage(native: dict[str, Any]) -> dict[str, Any]:
