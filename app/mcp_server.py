@@ -2,9 +2,10 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 
 from app.services.extractor import Extractor
+from app.services.visual_payload import make_visual_contents
 
 mcp = FastMCP(
     name="Echryn",
@@ -144,3 +145,26 @@ async def extract_reel(
         False,
     )
     return _public_result(result)
+
+
+@mcp.tool(
+    title="Get Instagram Visual Image",
+    description=(
+        "Return an actual native MCP image-content block, not a URL or Base64 JSON string. "
+        "Use only when the model needs to inspect pixels from an Instagram carousel or Reel. "
+        "asset_index is 1-based in the order of visual.images or visual.frames from extract_reel. "
+        "One image per call prevents automatic large payloads. "
+        "The signed URLs remain available as the primary extraction output."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
+)
+async def get_visual_image(url: str, asset_index: int = 1):
+    result = await extractor.extract(url, "evidence", True, "urls", False)
+    if result.get("status") != "complete":
+        return [TextContent(type="text", text="Echryn could not extract visual evidence.")]
+    contents = make_visual_contents(result, asset_index)
+    if len(contents) == 1 and "asset_not_in_evidence_store" in contents[0].text:
+        # Cloud Run instances do not share their ephemeral local evidence stores.
+        result = await extractor.extract(url, "evidence", True, "urls", True)
+        contents = make_visual_contents(result, asset_index)
+    return contents
