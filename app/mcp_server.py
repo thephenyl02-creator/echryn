@@ -47,6 +47,12 @@ def _public_result(result: dict) -> dict:
             }
         )
 
+    visual = result.get("visual") or {}
+    images = [
+        {key: entry.get(key) for key in
+         ("slide_index", "kind", "url", "width", "height", "accessibility_caption")}
+        for entry in visual.get("images") or [] if entry.get("url")
+    ]
     native_public = {
         "caption": native.get("caption"),
         "like_count": native.get("like_count"),
@@ -77,14 +83,22 @@ def _public_result(result: dict) -> dict:
         "native": native_public,
         "visual": {
             "status": (result.get("visual") or {}).get("status"),
-            "requires_visual_inspection": bool(frames),
+            "requires_visual_inspection": bool(frames or images or visual.get("media_type") == "carousel"),
             "instruction": (
                 "Retrieve and visually inspect each frame URL with an image-capable tool "
                 "before interpreting on-screen content. If retrieval is unavailable, "
                 "disclose that the frames were not inspected; do not infer their contents "
                 "from the caption or metadata."
-                if frames else None
+                if frames else (
+                    "Retrieve all carousel image URLs in slide order; inspect images before making visual claims. "
+                    "Alt descriptions and caption alone are not visual evidence. Report missing URLs."
+                    if visual.get("media_type") == "carousel" else None
+                )
             ),
+            "media_type": visual.get("media_type"),
+            "slide_count": visual.get("slide_count"),
+            "missing_slides": visual.get("missing_slides", []),
+            "images": images,
             "frames": frames,
         },
         "speech": result.get("speech"),
@@ -98,17 +112,17 @@ def _public_result(result: dict) -> dict:
 
 
 @mcp.tool(
-    title="Extract Instagram Reel",
+    title="Extract Instagram Media",
     description=(
-        "Use when the user provides a public Instagram Reel URL and wants to understand "
-        "the Reel's actual content. Retrieves public Reel metadata and, when needed, "
+        "Use when the user provides an Instagram Reel, image post, or carousel and wants to understand "
+        "its actual content. Retrieves post metadata, original carousel slide image URLs and, when needed, "
         "representative visual frames plus speech or transcript evidence. "
-        "IMPORTANT VISUAL-EVIDENCE PROCEDURE: When visual.frames contains HTTPS URLs, "
+        "IMPORTANT VISUAL-EVIDENCE PROCEDURE: When visual.images or visual.frames contains HTTPS URLs, "
         "retrieve and visually inspect each returned image using an image-capable retrieval "
         "tool before explaining on-screen content or fact-checking claims. These URL values "
-        "identify actual WebP frame files; the JSON itself does not contain the images. "
+        "identify original carousel images or generated WebP frames; the JSON does not contain images. "
         "Do not treat the mere presence of frame URLs as proof that the images were viewed. "
-        "If image retrieval is unavailable or fails, explicitly disclose that the frames "
+        "If image retrieval is unavailable or fails, explicitly disclose that the visuals "
         "were not inspected and avoid unsupported visual claims. "
         "This is read-only and does not post, modify, or delete Instagram content."
     ),

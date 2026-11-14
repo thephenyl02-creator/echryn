@@ -163,6 +163,22 @@ class Extractor:
                 result["visual"] = {"status": "skipped_by_policy", "reason": "metadata mode"}
                 result["speech"] = {"status": "skipped_by_policy", "reason": "metadata mode"}
 
+            elif normalized["media"]["carousel"]["is_carousel"]:
+                carousel = normalized["media"]["carousel"]
+                images = [i for i in carousel["images"] if i.get("url")]
+                missing = [i["slide_index"] for i in carousel["images"] if not i.get("url")]
+                result["visual"] = {
+                    "status": "available" if images and not missing else ("partial" if images else "not_exposed"),
+                    "media_type": "carousel", "slide_count": carousel["slide_count"],
+                    "images": images, "missing_slides": missing,
+                    "reason": "original_carousel_image_urls" if images else "carousel_image_urls_not_exposed",
+                }
+                result["speech"] = {"status": "not_applicable", "reason": "carousel_image_delivery"}
+                result["provenance"].append({
+                    "source": "instagram_carousel_media",
+                    "status": result["visual"]["status"],
+                    "slide_count": carousel["slide_count"], "image_urls_returned": len(images),
+                })
             elif need_media and normalized["media"].get("video_url"):
                 with temp_workspace("echryn-") as td:
                     root = Path(td)
@@ -298,6 +314,8 @@ class Extractor:
             ocr_text = ocr_payload.get("prominent_text") or ocr_payload.get("text")
             if ocr_text:
                 summary_parts.append(ocr_text)
+            elif result.get("visual", {}).get("images"):
+                summary_parts.append("Carousel URLs available; images not yet visually inspected.")
             elif multimodal and result.get("visual", {}).get("frames"):
                 summary_parts.append("Visual frame evidence available for multimodal interpretation.")
 

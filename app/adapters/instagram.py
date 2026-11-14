@@ -100,6 +100,31 @@ def pick_best_video_url(item: dict[str, Any]) -> str | None:
     return None
 
 
+
+def extract_carousel_images(item: dict[str, Any]) -> dict[str, Any]:
+    children = item.get("carousel_media") or []
+    if str(item.get("media_type")) != "8" and not children:
+        return {"is_carousel": False, "slide_count": 0, "images": []}
+    count = max(len(children), int(item.get("carousel_media_count") or 0))
+    images = []
+    for i in range(count):
+        child = children[i] if i < len(children) and isinstance(children[i], dict) else {}
+        candidates = (child.get("image_versions2") or {}).get("candidates") or []
+        candidates = [v for v in candidates if isinstance(v, dict) and
+                      isinstance(v.get("url"), str) and v["url"].startswith("https://")]
+        best = max(candidates, key=lambda v: (int(v.get("width") or 0)*int(v.get("height") or 0),
+                                               int(v.get("width") or 0)), default={})
+        images.append({
+            "slide_index": i+1,
+            "kind": "video_thumbnail" if str(child.get("media_type")) == "2" else "image",
+            "url": best.get("url"),
+            "width": best.get("width"),
+            "height": best.get("height"),
+            "accessibility_caption": child.get("accessibility_caption"),
+        })
+    return {"is_carousel": True, "slide_count": count, "images": images}
+
+
 def normalize_native(raw: dict[str, Any]) -> dict[str, Any]:
     items = raw.get("items") or []
     if not items:
@@ -136,6 +161,7 @@ def normalize_native(raw: dict[str, Any]) -> dict[str, Any]:
         },
         "media": {
             "video_url": video_url,
+            "carousel": extract_carousel_images(item),
             "image_versions2": item.get("image_versions2"),
             "dash_info": item.get("video_dash_manifest") or item.get("dash_info"),
         },
