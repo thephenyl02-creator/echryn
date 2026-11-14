@@ -79,3 +79,40 @@ async def test_mcp_protocol_tool_result_is_image_block(tmp_path, monkeypatch):
     assert blocks[0].type == "text"
     assert blocks[1].type == "image"
     assert base64.b64decode(blocks[1].data) == data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_carousel", [True, False])
+async def test_main_extract_returns_native_image_and_urls(tmp_path, monkeypatch, is_carousel):
+    monkeypatch.setattr(settings, "echryn_data_dir", str(tmp_path))
+    result, data = stored_result(tmp_path, is_carousel)
+    calls = []
+    async def fake_extract(url, mode, multimodal, frame_delivery, force_refresh):
+        calls.append((mode, multimodal, frame_delivery, force_refresh))
+        return result
+    monkeypatch.setattr(mcp_server.extractor, "extract", fake_extract)
+    blocks = await mcp_server.mcp.call_tool(
+        "extract_reel", {"url": "https://www.instagram.com/p/test/"}
+    )
+    assert calls == [("evidence", True, "urls", False)]
+    assert blocks[0].type == "text"
+    assert "https://echryn.fenilbuilds.com/v1/frames/" in blocks[0].text
+    pictures = [b for b in blocks if b.type == "image"]
+    assert len(pictures) == 1
+    assert base64.b64decode(pictures[0].data) == data
+
+
+@pytest.mark.asyncio
+async def test_main_extract_url_only_mode_preserved(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "echryn_data_dir", str(tmp_path))
+    result, _ = stored_result(tmp_path)
+    async def fake_extract(url, mode, multimodal, frame_delivery, force_refresh):
+        assert mode == "auto"
+        return result
+    monkeypatch.setattr(mcp_server.extractor, "extract", fake_extract)
+    blocks = await mcp_server.mcp.call_tool(
+        "extract_reel", {"url": "https://www.instagram.com/p/test/", "image_delivery": "urls"}
+    )
+    assert len(blocks) == 1
+    assert blocks[0].type == "text"
+    assert "slide-001.jpg" in blocks[0].text

@@ -1,3 +1,4 @@
+import json
 from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -5,7 +6,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import TextContent, ToolAnnotations
 
 from app.services.extractor import Extractor
-from app.services.visual_payload import make_visual_contents
+from app.services.visual_payload import make_all_visual_contents, make_visual_contents
 
 mcp = FastMCP(
     name="Echryn",
@@ -96,7 +97,7 @@ def _public_result(result: dict) -> dict:
                     if visual.get("media_type") == "carousel" else None
                 )
             ),
-            "media_type": visual.get("media_type"),
+            "media_type": visual.get("media_type") or ("reel" if frames else None),
             "slide_count": visual.get("slide_count"),
             "missing_slides": visual.get("missing_slides", []),
             "images": images,
@@ -115,17 +116,12 @@ def _public_result(result: dict) -> dict:
 @mcp.tool(
     title="Extract Instagram Media",
     description=(
-        "Use when the user provides an Instagram Reel, image post, or carousel and wants to understand "
-        "its actual content. Retrieves post metadata, Echryn-hosted signed carousel slide image URLs and, when needed, "
-        "representative visual frames plus speech or transcript evidence. "
-        "IMPORTANT VISUAL-EVIDENCE PROCEDURE: When visual.images or visual.frames contains HTTPS URLs, "
-        "retrieve and visually inspect each returned image using an image-capable retrieval "
-        "tool before explaining on-screen content or fact-checking claims. These URL values "
-        "identify original carousel images or generated WebP frames; the JSON does not contain images. "
-        "Do not treat the mere presence of frame URLs as proof that the images were viewed. "
-        "If image retrieval is unavailable or fails, explicitly disclose that the visuals "
-        "were not inspected and avoid unsupported visual claims. "
-        "This is read-only and does not post, modify, or delete Instagram content."
+        "Extract any Instagram Reel, photo post, or carousel. Default response contains "
+        "native MCP image blocks for ALL available slides or video frames, plus a text "
+        "JSON metadata block with signed image URLs, captions, and speech evidence. "
+        "Visual inspection must use the image blocks; do not infer from captions alone. "
+        "Set image_delivery='urls' to get URL-only JSON or mode='metadata' to skip visuals. "
+        "If the model cannot access image blocks, disclose that limitation. Read-only."
     ),
     annotations=ToolAnnotations(
         read_only_hint=True,
@@ -136,15 +132,28 @@ def _public_result(result: dict) -> dict:
 async def extract_reel(
     url: str,
     mode: Literal["metadata", "auto", "evidence", "deep"] = "auto",
-) -> dict:
-    result = await extractor.extract(
-        url,
-        mode,
-        True,
-        "urls",
-        False,
+    image_delivery: Literal["image", "urls"] = "image",
+):
+    effective_mode = "evidence" if mode == "auto" and image_delivery == "image" else mode
+    result = await extractor.extract(url, effective_mode, True, "urls", False)
+    public_result = _public_result(result)
+    if image_delivery == "urls" or mode == "metadata" or result.get("status") != "complete":
+        return [TextContent(type="text", text=json.dumps(public_result, ensure_ascii=False))]
+    public_result["visual"]["delivery"] = "mcp_image_content"
+    public_result["visual"]["instruction"] = (
+        "Inspect the native MCP image content blocks attached to this result. "
+        "Signed URLs are retained for reference. Do not claim images were "
+        "inspected if the ChatGPT client does not expose the image blocks."
     )
-    return _public_result(result)
+    blocks = make_all_visual_contents(result, public_result)
+    # Cached evidence can refer to files from another ephemeral Cloud Run instance.
+    if any("asset_not_in_evidence_store" in b.text for b in blocks if isinstance(b, TextContent)):
+        result = await extractor.extract(url, effective_mode, True, "urls", True)
+        refreshed = _public_result(result)
+        refreshed["visual"]["delivery"] = "mcp_image_content"
+        refreshed["visual"]["instruction"] = public_result["visual"]["instruction"]
+        blocks = make_all_visual_contents(result, refreshed)
+    return blocks
 
 
 @mcp.tool(
@@ -154,7 +163,7 @@ async def extract_reel(
         "Use only when the model needs to inspect pixels from an Instagram carousel or Reel. "
         "asset_index is 1-based in the order of visual.images or visual.frames from extract_reel. "
         "One image per call prevents automatic large payloads. "
-        "The signed URLs remain available as the primary extraction output."
+        "The signed URLs remain included in extract_reel metadata."
     ),
     annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
 )

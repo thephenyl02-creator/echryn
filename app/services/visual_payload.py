@@ -55,3 +55,35 @@ def make_visual_contents(result: dict, asset_index: int = 1) -> list[TextContent
         TextContent(type="text", text=json.dumps(identity)),
         ImageContent(type="image", mimeType=mime, data=base64.b64encode(raw).decode("ascii")),
     ]
+def make_all_visual_contents(result: dict, public_result: dict) -> list[TextContent | ImageContent]:
+    """Return metadata, signed URLs, and all available image blocks together."""
+    blocks: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(public_result, ensure_ascii=False))
+    ]
+    visual = result.get("visual") or {}
+    assets = (visual.get("images") or []) or (visual.get("frames") or [])
+    delivered = 0
+    max_total_bytes = 16 * 1024 * 1024
+    total_bytes = 0
+    for index in range(1, len(assets) + 1):
+        pair = make_visual_contents(result, index)
+        if len(pair) > 1 and isinstance(pair[1], ImageContent):
+            byte_count = len(pair[1].data) * 3 // 4
+            if total_bytes + byte_count > max_total_bytes:
+                blocks.append(TextContent(type="text", text=json.dumps({
+                    "image_data_status": "size_budget_reached",
+                    "first_undelivered_index": index,
+                    "remaining_assets_have_signed_urls": True,
+                })))
+                break
+            blocks.extend(pair)
+            delivered += 1
+            total_bytes += byte_count
+        else:
+            blocks.extend(pair)
+    blocks.append(TextContent(type="text", text=json.dumps({
+        "image_data_status": "complete" if delivered == len(assets) else "partial",
+        "image_blocks": delivered, "total_assets": len(assets),
+        "signed_urls_preserved": True,
+    })))
+    return blocks
