@@ -209,7 +209,10 @@ async def get_extraction(extraction_id: str):
 
 @app.get("/v1/frames/{extraction_id}/{filename}")
 async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
-    if "/" in filename or "\\" in filename or not filename.endswith(".webp"):
+    media_types = {".webp": "image/webp", ".jpg": "image/jpeg",
+                   ".jpeg": "image/jpeg", ".png": "image/png"}
+    extension = os.path.splitext(filename)[1].lower()
+    if "/" in filename or "\\" in filename or extension not in media_types:
         raise HTTPException(status_code=400, detail="Invalid frame filename")
 
     if not validate_frame_signature(extraction_id, filename, exp, sig):
@@ -225,4 +228,4 @@ async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
     if not frame_path.is_file():
         raise HTTPException(status_code=404, detail="Frame not found")
 
-    return FileResponse(frame_path, media_type="image/webp")
+    return FileResponse(frame_path, media_type=media_types[extension])

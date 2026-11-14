@@ -4,6 +4,7 @@ from typing import Any
 
 from app.adapters.instagram import InstagramClient, normalize_native, resolve_instagram_url
 from app.config import settings
+from app.services.carousel_delivery import deliver_carousel_images
 from app.services.coverage import semantic_coverage
 from app.services.media import cleanup_stale_frame_evidence, download_media, extract_frames, local_visual_analyze, probe_media, refresh_frame_urls, temp_workspace, touch_frame_evidence
 from app.services.native_resources import fetch_text_track_evidence, inspect_native_resources
@@ -47,6 +48,16 @@ class Extractor:
 
         cached["id"] = request_id
         cached.setdefault("diagnostics", {})["cached"] = True
+        # Ephemeral Cloud Run volumes can disappear between requests/instances.
+        # Never issue an apparently valid signed URL to missing local media.
+        images = (cached.get("visual") or {}).get("images") or []
+        if any(
+            image.get("delivery") != "url"
+            or not (settings.data_dir / settings.echryn_frame_store_subdir
+                    / request_id / str(image.get("filename", ""))).is_file()
+            for image in images
+        ):
+            return None
         refresh_frame_urls(cached)
         touch_frame_evidence(request_id)
         return cached
@@ -103,7 +114,7 @@ class Extractor:
             normalized = normalize_native(raw)
             result["author"] = normalized["author"]
             result["native"] = normalized["native"]
-            result["media"] = {k: v for k, v in normalized["media"].items() if k != "video_url"}
+            result["media"] = {k: v for k, v in normalized["media"].items() if k not in {"video_url", "carousel"}}
             result["provenance"].append({"source": "instagram_media_info", "status": "available"})
             coverage = semantic_coverage(result["native"])
             result["diagnostics"]["semantic_coverage"] = coverage
@@ -165,19 +176,25 @@ class Extractor:
 
             elif normalized["media"]["carousel"]["is_carousel"]:
                 carousel = normalized["media"]["carousel"]
-                images = [i for i in carousel["images"] if i.get("url")]
-                missing = [i["slide_index"] for i in carousel["images"] if not i.get("url")]
+                delivered, delivery_errors = await deliver_carousel_images(carousel["images"], request_id)
+                images = [entry for entry in delivered if entry.get("url")]
+                missing = [entry["slide_index"] for entry in delivered if not entry.get("url")]
                 result["visual"] = {
                     "status": "available" if images and not missing else ("partial" if images else "not_exposed"),
-                    "media_type": "carousel", "slide_count": carousel["slide_count"],
-                    "images": images, "missing_slides": missing,
-                    "reason": "original_carousel_image_urls" if images else "carousel_image_urls_not_exposed",
+                    "media_type": "carousel",
+                    "slide_count": carousel["slide_count"],
+                    "images": delivered,
+                    "missing_slides": missing,
+                    "delivery_errors": delivery_errors,
+                    "reason": "echryn_signed_carousel_image_urls" if images else "carousel_images_not_delivered",
                 }
                 result["speech"] = {"status": "not_applicable", "reason": "carousel_image_delivery"}
                 result["provenance"].append({
                     "source": "instagram_carousel_media",
                     "status": result["visual"]["status"],
-                    "slide_count": carousel["slide_count"], "image_urls_returned": len(images),
+                    "slide_count": carousel["slide_count"],
+                    "image_urls_returned": len(images),
+                    "delivery": "echryn_signed_urls",
                 })
             elif need_media and normalized["media"].get("video_url"):
                 with temp_workspace("echryn-") as td:
@@ -339,7 +356,9 @@ class Extractor:
                 "semantic_coverage": effective_coverage,
             }
 
-            self.cache.put_variant(identity, variant, result)
+            # Do not cache failed/partial slide delivery for 24 hours: allow retries.
+            if result["visual"].get("media_type") != "carousel" or result["visual"].get("status") == "available":
+                self.cache.put_variant(identity, variant, result)
             return result
 
         except Exception as e:

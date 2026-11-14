@@ -50,7 +50,7 @@ def _public_result(result: dict) -> dict:
     visual = result.get("visual") or {}
     images = [
         {key: entry.get(key) for key in
-         ("slide_index", "kind", "url", "width", "height", "accessibility_caption")}
+         ("slide_index", "kind", "url", "mime_type", "delivery", "width", "height", "accessibility_caption")}
         for entry in visual.get("images") or [] if entry.get("url")
     ]
     native_public = {
@@ -115,7 +115,7 @@ def _public_result(result: dict) -> dict:
     title="Extract Instagram Media",
     description=(
         "Use when the user provides an Instagram Reel, image post, or carousel and wants to understand "
-        "its actual content. Retrieves post metadata, original carousel slide image URLs and, when needed, "
+        "its actual content. Retrieves post metadata, Echryn-hosted signed carousel slide image URLs and, when needed, "
         "representative visual frames plus speech or transcript evidence. "
         "IMPORTANT VISUAL-EVIDENCE PROCEDURE: When visual.images or visual.frames contains HTTPS URLs, "
         "retrieve and visually inspect each returned image using an image-capable retrieval "

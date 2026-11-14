@@ -621,11 +621,13 @@ def refresh_frame_urls(result: dict[str, Any]) -> None:
     if not extraction_id:
         return
 
-    frames = result.get("visual", {}).get("frames", [])
-    if not isinstance(frames, list):
+    visual = result.get("visual", {})
+    frames = visual.get("frames", [])
+    images = visual.get("images", [])
+    if not isinstance(frames, list) or not isinstance(images, list):
         return
 
-    for frame in frames:
+    for frame in frames + images:
         if not isinstance(frame, dict) or frame.get("delivery") != "url":
             continue
 

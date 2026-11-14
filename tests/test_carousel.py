@@ -27,6 +27,14 @@ async def test_auto_carousel_ignores_caption_and_reports_missing(tmp_path, monke
     async def media_info(_):
         return {"items": [make_item(missing=(5, 9))]}
     monkeypatch.setattr(x.instagram, "media_info", media_info)
+    from io import BytesIO
+    from PIL import Image
+    from app.services import carousel_delivery
+    image_bytes = BytesIO()
+    Image.new("RGB", (30, 40), (100, 150, 200)).save(image_bytes, "JPEG")
+    async def fake_download(_url):
+        return image_bytes.getvalue()
+    monkeypatch.setattr(carousel_delivery, "_download_carousel_image", fake_download)
     r = await x.extract("https://www.instagram.com/p/Dfb2I2jn1KZ/", mode="auto", multimodal=True)
     out = _public_result(r)
     assert out["visual"]["status"] == "partial"
@@ -35,3 +43,5 @@ async def test_auto_carousel_ignores_caption_and_reports_missing(tmp_path, monke
     assert len(out["visual"]["images"]) == 10
     assert out["visual"]["requires_visual_inspection"] is True
     assert out["visual"]["frames"] == []
+    assert all("cdn.test" not in image["url"] for image in out["visual"]["images"])
+    assert all("/v1/frames/" in image["url"] for image in out["visual"]["images"])
