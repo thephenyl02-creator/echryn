@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
+from app.services.url_security import trusted_text_track_url
 
 from app.services.coverage import substantive_text
 
@@ -252,7 +253,7 @@ async def fetch_text_track_evidence(
 
     async with httpx.AsyncClient(
         timeout=15,
-        follow_redirects=True,
+        follow_redirects=False,
         headers={"User-Agent": user_agent},
     ) as client:
         for track in tracks[:max_tracks]:
@@ -267,10 +268,21 @@ async def fetch_text_track_evidence(
                 "mime_type": track.get("mime_type"),
             }
             try:
-                response = await client.get(url)
-                response.raise_for_status()
-                raw = response.content
-                content_type = (response.headers.get("content-type") or "").lower()
+                if not trusted_text_track_url(url):
+                    raise ValueError("untrusted_text_track_host")
+                async with client.stream("GET", url) as response:
+                    if response.is_redirect:
+                        raise ValueError("text_track_redirect_not_supported")
+                    response.raise_for_status()
+                    content_type = (response.headers.get("content-type") or "").lower()
+                    chunks = []
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise ValueError("text_track_exceeded_size_limit")
+                        chunks.append(chunk)
+                    raw = b"".join(chunks)
                 plausible_text = (
                     content_type.startswith("text/")
                     or "json" in content_type

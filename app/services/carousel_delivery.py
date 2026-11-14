@@ -10,6 +10,7 @@ from PIL import Image
 
 from app.config import settings
 from app.services.media import build_frame_url
+from app.services.url_security import trusted_instagram_media_url
 from app.storage.frame_store import upload_frame
 
 MAX_SLIDE_BYTES = 16 * 1024 * 1024
@@ -22,20 +23,7 @@ IMAGE_FORMATS = {
 
 
 def _instagram_media_host(url: str) -> bool:
-    """Never proxy arbitrary URLs supplied through Instagram metadata."""
-    try:
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower()
-        return (
-            parsed.scheme == "https"
-            and parsed.username is None
-            and parsed.password is None
-            and parsed.port in (None, 443)
-            and any(host == base or host.endswith("." + base)
-                    for base in ("cdninstagram.com", "fbcdn.net"))
-        )
-    except (TypeError, ValueError):
-        return False
+    return trusted_instagram_media_url(url)
 
 
 async def _download_carousel_image(url: str) -> bytes:

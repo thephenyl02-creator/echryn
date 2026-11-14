@@ -23,13 +23,22 @@ def shortcode_to_media_id(shortcode: str) -> str:
 
 def resolve_instagram_url(url: str) -> dict[str, str]:
     parsed = urlparse(url)
-    host = parsed.netloc.lower().split(":")[0]
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Invalid Instagram URL port") from exc
+    host = (parsed.hostname or "").lower()
+    if (parsed.scheme != "https" or parsed.username is not None or
+            parsed.password is not None or port not in (None, 443)):
+        raise ValueError("Only HTTPS Instagram URLs on standard ports are supported")
     if host not in {"instagram.com", "www.instagram.com", "m.instagram.com"}:
         raise ValueError("Only Instagram URLs are supported in v1")
     m = SHORTCODE_RE.search(parsed.path)
     if not m:
         raise ValueError("Unsupported Instagram URL; expected /reel/, /reels/, or /p/")
     shortcode = m.group(1)
+    if len(shortcode) > 40:
+        raise ValueError("Instagram shortcode too long")
     return {
         "platform": "instagram",
         "shortcode": shortcode,

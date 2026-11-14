@@ -1,4 +1,5 @@
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
@@ -213,6 +214,8 @@ async def get_frame(extraction_id: str, filename: str, exp: int, sig: str):
     media_types = {".webp": "image/webp", ".jpg": "image/jpeg",
                    ".jpeg": "image/jpeg", ".png": "image/png"}
     extension = os.path.splitext(filename)[1].lower()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", extraction_id):
+        raise HTTPException(status_code=400, detail="Invalid extraction identifier")
     if "/" in filename or "\\" in filename or extension not in media_types:
         raise HTTPException(status_code=400, detail="Invalid frame filename")
 

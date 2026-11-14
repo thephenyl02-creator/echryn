@@ -196,6 +196,25 @@ class Extractor:
                     "image_urls_returned": len(images),
                     "delivery": "echryn_signed_urls",
                 })
+            elif str(normalized["item"].get("media_type")) == "1":
+                # Standalone Instagram photos require pixel evidence, just like carousels.
+                from app.services.url_security import trusted_instagram_media_url
+                candidates = (normalized["media"].get("image_versions2") or {}).get("candidates") or []
+                candidates = [c for c in candidates if isinstance(c, dict) and
+                              trusted_instagram_media_url(c.get("url", ""))]
+                best = max(candidates, key=lambda c: (c.get("width") or 0) * (c.get("height") or 0)) if candidates else {}
+                delivered, errors = await deliver_carousel_images(
+                    [{"slide_index": 1, "kind": "image", "url": best.get("url"),
+                      "accessibility_caption": normalized["native"].get("accessibility_caption")}],
+                    request_id,
+                )
+                images = [image for image in delivered if image.get("url")]
+                result["visual"] = {
+                    "status": "available" if images else "not_exposed",
+                    "media_type": "photo", "slide_count": 1, "images": delivered,
+                    "missing_slides": [] if images else [1], "delivery_errors": errors,
+                }
+                result["speech"] = {"status": "not_applicable", "reason": "photo_post"}
             elif need_media and normalized["media"].get("video_url"):
                 with temp_workspace("echryn-") as td:
                     root = Path(td)
@@ -332,7 +351,7 @@ class Extractor:
             if ocr_text:
                 summary_parts.append(ocr_text)
             elif result.get("visual", {}).get("images"):
-                summary_parts.append("Carousel URLs available; images not yet visually inspected.")
+                summary_parts.append("Image URLs available; images not yet visually inspected.")
             elif multimodal and result.get("visual", {}).get("frames"):
                 summary_parts.append("Visual frame evidence available for multimodal interpretation.")
 
@@ -357,7 +376,7 @@ class Extractor:
             }
 
             # Do not cache failed/partial slide delivery for 24 hours: allow retries.
-            if result["visual"].get("media_type") != "carousel" or result["visual"].get("status") == "available":
+            if result["visual"].get("media_type") not in {"carousel", "photo"} or result["visual"].get("status") == "available":
                 self.cache.put_variant(identity, variant, result)
             return result
 

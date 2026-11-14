@@ -36,10 +36,15 @@ async def _run(*args: str) -> tuple[int, str, str]:
 
 
 async def download_media(url: str, dest: Path) -> dict[str, Any]:
+    from app.services.url_security import trusted_instagram_media_url
+    if not trusted_instagram_media_url(url):
+        raise ValueError("untrusted_video_media_host")
     limit = settings.echryn_max_media_mb * 1024 * 1024
     total = 0
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
         async with client.stream("GET", url, headers={"User-Agent": settings.instagram_user_agent}) as r:
+            if r.is_redirect:
+                raise ValueError("video_redirect_not_supported")
             r.raise_for_status()
             with dest.open("wb") as f:
                 async for chunk in r.aiter_bytes():
@@ -515,7 +520,7 @@ def _selected_frame_indices(total: int, limit: int) -> list[int]:
 def _dhash64(path: Path) -> int:
     with Image.open(path) as image:
         gray = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-        pixels = list(gray.getdata())
+        pixels = list(gray.get_flattened_data())
 
     value = 0
     for row in range(8):

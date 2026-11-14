@@ -94,7 +94,7 @@ async def test_main_extract_returns_native_image_and_urls(tmp_path, monkeypatch,
     blocks = await mcp_server.mcp.call_tool(
         "extract_reel", {"url": "https://www.instagram.com/p/test/"}
     )
-    assert calls == [("evidence", True, "urls", False)]
+    assert calls == [("auto", True, "urls", False)]
     assert blocks[0].type == "text"
     assert "https://echryn.fenilbuilds.com/v1/frames/" in blocks[0].text
     pictures = [b for b in blocks if b.type == "image"]

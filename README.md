@@ -144,3 +144,15 @@ If substantive native text is found, Echryn can satisfy semantic coverage withou
 Set ECHRYN_FRAME_BUCKET to a private Google Cloud Storage bucket to persist carousel slides and Reel frames across Cloud Run instances and revisions. Grant the Cloud Run service account storage.objectAdmin on that bucket. Keep public access prevention enabled and a one-day lifecycle delete policy, with soft-delete disabled, when one-day retention is desired. Signed /v1/frames URLs continue to use ECHRYN_API_KEY and expire after ECHRYN_FRAME_URL_TTL_SECONDS.
 
 The URL-only MCP tool extract_visual_urls avoids embedding image bytes and instructs clients with image-capable browsing to inspect each required visual URL. Browser access is client-dependent; extract_reel continues to return native image content as the reliable fallback. Do not assume URLs are visually available without inspecting them.
+
+## Auto-mode policy (2026-11-14)
+- Auto is metadata-first for video Reels. A substantive caption or native text track can satisfy analysis without downloading the video. If a user requests visual specifics, invoke mode=evidence.
+- Photo and carousel posts supply actual image evidence in Auto; all carousel slides are preserved in order. Mode=evidence/deep bypasses the caption-only shortcut.
+- extract_visual_urls returns signed HTTPS links and no image blocks. ChatGPT's browsing tool may refuse access to the service even if HTTPS fetch works; never assert that pixels were inspected in that case. Use native MCP image delivery as fallback.
+
+## Security & reliability audit (2026-11-14)
+- External video, carousel and text-track URLs are restricted to trusted Instagram/Meta HTTPS hosts; untrusted hosts and redirects are refused. Text-track downloads are bounded.
+- Signed frame URLs still expire in 24 hours, private Google Cloud storage retains temporary evidence until its one-day lifecycle cleanup, and REST extraction requires API key.
+- Dependencies were updated (Pillow 13, Starlette 1.10, FastAPI 0.162.6, etc.) and local pip-audit reported no known vulnerabilities.
+- **Public launch blocker:** The MCP endpoint itself currently has no end-user OAuth authorization or distributed usage limits. It must not be treated as public multi-user production-ready. The previously chosen V2 authentication/quotas design remains necessary.
+- Local Cloud Run metadata cache is instance-specific. Image bytes now reside in shared storage, so HTTPS frames are not lost between instances, but cached metadata can be repeated.

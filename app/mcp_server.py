@@ -92,9 +92,9 @@ def _public_result(result: dict) -> dict:
                 "disclose that the frames were not inspected; do not infer their contents "
                 "from the caption or metadata."
                 if frames else (
-                    "Retrieve all carousel image URLs in slide order; inspect images before making visual claims. "
+                    "Retrieve all available image URLs in order; inspect images before making visual claims. "
                     "Alt descriptions and caption alone are not visual evidence. Report missing URLs."
-                    if visual.get("media_type") == "carousel" else None
+                    if visual.get("media_type") in {"carousel", "photo"} else None
                 )
             ),
             "media_type": visual.get("media_type") or ("reel" if frames else None),
@@ -117,9 +117,9 @@ def _public_result(result: dict) -> dict:
     title="Extract Instagram Media",
     description=(
         "Extract any Instagram Reel, photo post, or carousel. Default response contains "
-        "native MCP image blocks for ALL available slides or video frames, plus a text "
+        "native MCP image blocks when visual evidence is needed, plus a text "
         "JSON metadata block with signed image URLs, captions, and speech evidence. "
-        "Visual inspection must use the image blocks; do not infer from captions alone. "
+        "Auto mode evaluates caption and native text before video download; carousels remain visual. "
         "Set image_delivery='urls' to get URL-only JSON or mode='metadata' to skip visuals. "
         "If the model cannot access image blocks, disclose that limitation. Read-only."
     ),
@@ -134,10 +134,18 @@ async def extract_reel(
     mode: Literal["metadata", "auto", "evidence", "deep"] = "auto",
     image_delivery: Literal["image", "urls"] = "image",
 ):
-    effective_mode = "evidence" if mode == "auto" and image_delivery == "image" else mode
+    effective_mode = mode  # Auto must preserve the metadata-first coverage gate.
     result = await extractor.extract(url, effective_mode, True, "urls", False)
     public_result = _public_result(result)
     if image_delivery == "urls" or mode == "metadata" or result.get("status") != "complete":
+        return [TextContent(type="text", text=json.dumps(public_result, ensure_ascii=False))]
+    if not (public_result["visual"].get("images") or public_result["visual"].get("frames")):
+        public_result["visual"]["delivery"] = "none"
+        public_result["visual"]["instruction"] = (
+            "Auto mode found sufficient native information and returned no visual pixels. "
+            "If the user requests visual specifics, call extract_reel with mode='evidence' "
+            "to inspect images rather than guessing from the caption."
+        )
         return [TextContent(type="text", text=json.dumps(public_result, ensure_ascii=False))]
     public_result["visual"]["delivery"] = "mcp_image_content"
     public_result["visual"]["instruction"] = (

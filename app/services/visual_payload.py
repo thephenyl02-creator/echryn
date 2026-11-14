@@ -53,7 +53,7 @@ def make_visual_contents(result: dict, asset_index: int = 1) -> list[TextContent
             return unavailable("asset_not_in_evidence_store")
         if not 0 < len(raw) <= _MAX_BYTES:
             return unavailable("asset_size_out_of_range")
-    identity = {"status": "available", "kind": "carousel_slide" if slides else "reel_frame",
+    identity = {"status": "available", "kind": ("photo_image" if visual.get("media_type") == "photo" else "carousel_slide") if slides else "reel_frame",
                 "asset_index": asset_index, "asset_count": len(assets), "mime_type": mime,
                 "width": asset.get("width"), "height": asset.get("height")}
     identity["slide_index" if slides else "timestamp_seconds"] = (
