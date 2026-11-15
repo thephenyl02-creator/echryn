@@ -124,9 +124,9 @@ def _public_result(result: dict) -> dict:
         "If the model cannot access image blocks, disclose that limitation. Read-only."
     ),
     annotations=ToolAnnotations(
-        read_only_hint=True,
-        destructive_hint=False,
-        open_world_hint=True,
+        readOnlyHint=True,
+        destructiveHint=False,
+        openWorldHint=True,
     ),
 )
 async def extract_reel(
@@ -173,7 +173,7 @@ async def extract_reel(
         "One image per call prevents automatic large payloads. "
         "The signed URLs remain included in extract_reel metadata."
     ),
-    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
 )
 async def get_visual_image(url: str, asset_index: int = 1):
     result = await extractor.extract(url, "evidence", True, "urls", False)
@@ -196,7 +196,7 @@ async def get_visual_image(url: str, asset_index: int = 1):
         "actual pixels. Never infer visual contents from captions or URLs alone. "
         "If browsing cannot render an image, use extract_reel native image evidence instead."
     ),
-    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True),
 )
 async def extract_visual_urls(
     url: str,
