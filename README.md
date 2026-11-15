@@ -5,6 +5,18 @@
 
 Echryn turns a short-form content URL into structured information. Instagram Reels are the first supported source.
 
+## Try the public V1 beta
+
+**Remote MCP endpoint:** `https://echryn.fenilbuilds.com/mcp/`
+
+If your AI client supports custom remote MCP servers, add the endpoint as a custom connection and ask it to analyze a **public** Instagram Reel or carousel URL. For example: "Analyze the visible slides and speech in this Instagram post: https://www.instagram.com/p/..." The current ChatGPT plugin is **not listed in the public Plugin Directory**; users need a client with custom MCP support.
+
+Echryn returns captions and metadata first, and can provide real video frames, audio transcripts, photo posts, or all carousel slides as native MCP image evidence. It uses an **operator-managed Instagram session**, not user credentials. Do not submit passwords or session cookies.
+
+**Shared service limits:** 10 admissions per rolling hour, 50 per UTC day, and one active extraction for **all beta users combined**. At the limit, requests can be temporarily refused. The service is experimental, unofficial, and not endorsed by Meta or Instagram; access may be interrupted by Instagram restrictions. Submit only content you are permitted to access.
+
+[Beta instructions](PUBLIC_BETA.md) · [Apache-2.0 license](LICENSE) · [Attribution](NOTICE) · [Report issues](https://github.com/thephenyl02-creator/echryn/issues) · [Discussions](https://github.com/thephenyl02-creator/echryn/discussions)
+
 ## What v0.1 does
 
 - Resolves Instagram Reel/post URLs to shortcode + numeric media ID.
